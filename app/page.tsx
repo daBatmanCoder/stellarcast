@@ -19,8 +19,9 @@ import { WalletConnect } from '@/components/WalletConnect';
 import { NetworkGuard } from '@/components/NetworkGuard';
 import { Browse } from '@/components/Browse';
 import { PaymentSlideOver } from '@/components/PaymentSlideOver';
+import { RecipientScan } from '@/components/RecipientScan';
 
-type ViewState = 'landing' | 'wallet-connect' | 'browse' | 'stream';
+type ViewState = 'landing' | 'wallet-connect' | 'browse' | 'scan' | 'stream';
 type PaymentStatus = 'idle' | 'pending' | 'confirming' | 'success' | 'error';
 
 export default function Home() {
@@ -32,6 +33,9 @@ export default function Home() {
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('idle');
   const [txHash, setTxHash] = useState<string>('');
   const [paymentError, setPaymentError] = useState<string>('');
+  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>('new');
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   
   const metamask = useMetaMask();
 
@@ -133,12 +137,50 @@ export default function Home() {
     }
   };
 
-  // Cleanup on unmount
+  // Initialize WebRTC when entering stream view
+  useEffect(() => {
+    const initWebRTC = async () => {
+      if (viewState !== 'stream') return;
+
+      try {
+        const { createPeerConnection, onConnectionStateChange, getUserMedia } = await import('@/lib/webrtc/video-stream');
+        
+        // Create peer connection
+        const pc = createPeerConnection();
+        setPeerConnection(pc);
+
+        // Monitor connection state
+        onConnectionStateChange(pc, (state) => {
+          setConnectionState(state);
+        });
+
+        // Get local media stream (for demo/preview)
+        try {
+          const stream = await getUserMedia({ video: true, audio: true });
+          setLocalStream(stream);
+        } catch (mediaError) {
+          console.warn('Could not access media devices:', mediaError);
+          // Stream view still works without local media
+        }
+      } catch (error) {
+        console.error('WebRTC initialization failed:', error);
+      }
+    };
+
+    initWebRTC();
+  }, [viewState]);
+
+  // Cleanup WebRTC on unmount or leaving stream
   useEffect(() => {
     return () => {
-      // Cleanup logic if needed
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
     };
-  }, []);
+  }, [peerConnection, localStream]);
 
   // Landing view
   if (viewState === 'landing') {
@@ -168,8 +210,8 @@ export default function Home() {
           backgroundColor: 'rgba(10, 10, 12, 0.8)',
           backdropFilter: 'blur(12px)'
         }}>
-          <div className="container-custom py-4">
-            <div className="flex items-center justify-between">
+          <div className="container-custom">
+            <div className="flex items-center justify-between py-4">
               <h1 style={{ fontSize: '1.25rem', fontWeight: 600 }}>
                 Stellarcast
               </h1>
@@ -183,6 +225,32 @@ export default function Home() {
                 </div>
               )}
             </div>
+
+            {/* Tabs */}
+            {(viewState === 'browse' || viewState === 'scan') && (
+              <div className="flex gap-1 -mb-px">
+                <button
+                  onClick={() => setViewState('browse')}
+                  className="px-4 py-3 text-sm font-medium transition-colors"
+                  style={{
+                    color: viewState === 'browse' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    borderBottom: viewState === 'browse' ? '2px solid var(--accent)' : '2px solid transparent'
+                  }}
+                >
+                  Browse
+                </button>
+                <button
+                  onClick={() => setViewState('scan')}
+                  className="px-4 py-3 text-sm font-medium transition-colors"
+                  style={{
+                    color: viewState === 'scan' ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    borderBottom: viewState === 'scan' ? '2px solid var(--accent)' : '2px solid transparent'
+                  }}
+                >
+                  Scan
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
@@ -191,6 +259,15 @@ export default function Home() {
           <Browse 
             adapter={getProtocolAdapter()} 
             onSelectEvent={handleSelectEvent} 
+          />
+        )}
+
+        {/* Recipient Scan */}
+        {viewState === 'scan' && identity && (
+          <RecipientScan
+            identity={identity}
+            registryAddress="0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538"
+            announcerAddress="0x55649E01B5Df198D18D95b5cc5051630cfD45564"
           />
         )}
 
@@ -212,20 +289,55 @@ export default function Home() {
             <div className="max-w-5xl mx-auto space-y-6">
               {/* Video player */}
               <div className="relative aspect-video rounded-2xl overflow-hidden" style={{ backgroundColor: 'var(--elevated)' }}>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center space-y-4">
-                    <div className="live-indicator">
-                      <span className="live-dot"></span>
-                      LIVE
-                    </div>
-                    <h2 style={{ fontSize: '2rem', fontWeight: 600 }}>
-                      Private Crypto Workshop
-                    </h2>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                      WebRTC stream placeholder
-                    </p>
-                  </div>
+                {/* Live indicator */}
+                <div className="absolute top-4 left-4 z-10 live-indicator">
+                  <span className="live-dot"></span>
+                  LIVE
                 </div>
+
+                {/* Connection state badge */}
+                <div className="absolute top-4 right-4 z-10 card px-3 py-1 flex items-center gap-2">
+                  <div 
+                    className="status-dot"
+                    style={{
+                      backgroundColor: connectionState === 'connected' ? 'var(--success)' :
+                                     connectionState === 'connecting' ? 'var(--warn)' :
+                                     'var(--text-tertiary)'
+                    }}
+                  ></div>
+                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {connectionState === 'connected' ? 'Connected' :
+                     connectionState === 'connecting' ? 'Connecting...' :
+                     connectionState === 'new' ? 'Ready' :
+                     connectionState}
+                  </span>
+                </div>
+
+                {/* Video element */}
+                {localStream ? (
+                  <video
+                    ref={(video) => {
+                      if (video && localStream) {
+                        video.srcObject = localStream;
+                      }
+                    }}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center space-y-4">
+                      <h2 style={{ fontSize: '2rem', fontWeight: 600 }}>
+                        Private Crypto Workshop
+                      </h2>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+                        {peerConnection ? 'WebRTC connection ready' : 'Initializing...'}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Stream info */}
@@ -234,7 +346,7 @@ export default function Home() {
                   <div>
                     <h3 className="text-lg font-semibold">Private Viewing Mode</h3>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                      Your identity is protected
+                      Your identity is protected via stealth address payment
                     </p>
                   </div>
                   <div className="card px-3 py-2" style={{ borderColor: 'var(--success)' }}>
@@ -244,8 +356,29 @@ export default function Home() {
                   </div>
                 </div>
 
+                {/* WebRTC info */}
+                {peerConnection && (
+                  <div className="card p-4 space-y-2" style={{ backgroundColor: 'var(--elevated)' }}>
+                    <p style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: 600 }}>
+                      WebRTC Active
+                    </p>
+                    <ul className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
+                      <li>• RTCPeerConnection initialized</li>
+                      <li>• STUN servers configured</li>
+                      <li>• {localStream ? 'Local media stream active' : 'Ready for signaling'}</li>
+                      <li>• Connection state: {connectionState}</li>
+                    </ul>
+                    <p className="text-xs pt-2" style={{ color: 'var(--text-tertiary)' }}>
+                      Note: Full peer-to-peer requires signaling server (offer/answer exchange)
+                    </p>
+                  </div>
+                )}
+
                 <button
-                  onClick={() => setViewState('browse')}
+                  onClick={() => {
+                    setViewState('browse');
+                    // Cleanup handled by useEffect
+                  }}
                   className="btn btn-secondary"
                 >
                   Leave Stream
