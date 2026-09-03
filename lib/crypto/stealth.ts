@@ -3,7 +3,7 @@
  * Implements ECDH shared secret, view tags, and stealth address generation
  */
 
-import { secp256k1 } from '@noble/curves/secp256k1.js';
+import { secp256k1, schnorr } from '@noble/curves/secp256k1.js';
 import { sha256 as sha256Noble } from '@noble/hashes/sha2.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import {
@@ -11,6 +11,18 @@ import {
   GeneratedStealthAddress,
   StealthIdentity,
 } from '../types/stealth';
+
+/**
+ * Add two secp256k1 public keys (elliptic curve point addition)
+ * Uses schnorr.Point which provides the ProjectivePoint constructor
+ */
+function addPublicKeys(pubKey1: Uint8Array, pubKey2: Uint8Array): Uint8Array {
+  const hex1 = Buffer.from(pubKey1).toString('hex');
+  const hex2 = Buffer.from(pubKey2).toString('hex');
+  const p1 = schnorr.Point.fromHex(hex1);
+  const p2 = schnorr.Point.fromHex(hex2);
+  return p1.add(p2).toBytes(true);
+}
 
 /**
  * Generate stealth address for recipient (sender side)
@@ -30,13 +42,10 @@ export function generateStealthAddress(
 
   const viewTag = sharedSecret[0];
 
-  const stealthPrivateKeyScalar = BigInt('0x' + Buffer.from(sharedSecret).toString('hex'));
+  const hashScalar = sharedSecret.slice(0, 32);
+  const hashPublicKey = secp256k1.getPublicKey(hashScalar, true);
   
-  const hashPoint = secp256k1.ProjectivePoint.BASE.multiply(stealthPrivateKeyScalar);
-  const spendingPoint = secp256k1.ProjectivePoint.fromHex(recipientMeta.spendingPublicKey);
-  const stealthPoint = spendingPoint.add(hashPoint);
-  
-  const stealthPublicKey = stealthPoint.toRawBytes(true);
+  const stealthPublicKey = addPublicKeys(recipientMeta.spendingPublicKey, hashPublicKey);
 
   const publicKeyHash = keccak_256(stealthPublicKey.slice(1));
   const stealthAddress = publicKeyHash.slice(-20);
@@ -69,11 +78,9 @@ export function checkStealthAddress(
     return null;
   }
 
-  const stealthPrivateKeyScalar = BigInt('0x' + Buffer.from(sharedSecret).toString('hex'));
-  const hashPoint = secp256k1.ProjectivePoint.BASE.multiply(stealthPrivateKeyScalar);
-  const spendingPoint = secp256k1.ProjectivePoint.fromHex(identity.spendingPublicKey);
-  const stealthPoint = spendingPoint.add(hashPoint);
-  const stealthPublicKey = stealthPoint.toRawBytes(true);
+  const hashScalar = sharedSecret.slice(0, 32);
+  const hashPublicKey = secp256k1.getPublicKey(hashScalar, true);
+  const stealthPublicKey = addPublicKeys(identity.spendingPublicKey, hashPublicKey);
 
   const publicKeyHash = keccak_256(stealthPublicKey.slice(1));
   const computedAddress = publicKeyHash.slice(-20);
