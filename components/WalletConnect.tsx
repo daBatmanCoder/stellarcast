@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useMetaMask } from '@/lib/wallet/useMetaMask';
 import { toChecksumAddress, authenticateWithWallet, reauthenticateWithWallet } from '@/lib/wallet/wallet-auth';
 import { generateStealthIdentity, identityToMetaAddress, encodeMetaAddress } from '@/lib/crypto/identity';
-import { storeIdentity, loadIdentity, hasIdentity, getAuthInfo } from '@/lib/storage/identity-store';
+import { storeIdentity, loadIdentity, hasIdentity, getAuthInfo, clearIdentity } from '@/lib/storage/identity-store';
+import { ensCache, forwardResolveENSWithNetwork, type ENSResult } from '@/lib/ens/resolver';
 import type { StealthIdentity } from '@/lib/types/stealth';
 
 interface WalletConnectProps {
@@ -15,6 +16,27 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
   const metamask = useMetaMask();
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string>('');
+  const [warningMessage, setWarningMessage] = useState<string>('');
+  const [ensResult, setEnsResult] = useState<ENSResult | null>(null);
+  const [isResolvingENS, setIsResolvingENS] = useState(false);
+  const [ensLookup, setEnsLookup] = useState<string>('');
+  const [lookupResult, setLookupResult] = useState<string>('');
+
+  // Resolve ENS name when wallet connects
+  useEffect(() => {
+    const resolveENS = async () => {
+      if (metamask.isConnected && metamask.address) {
+        setIsResolvingENS(true);
+        const result = await ensCache.resolve(metamask.address);
+        setEnsResult(result);
+        setIsResolvingENS(false);
+      } else {
+        setEnsResult(null);
+      }
+    };
+
+    resolveENS();
+  }, [metamask.isConnected, metamask.address]);
 
   const handleConnect = async () => {
     const success = await metamask.connect();
@@ -22,6 +44,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
 
     setIsAuthenticating(true);
     setAuthError('');
+    setWarningMessage('');
 
     try {
       const checksummedAddress = toChecksumAddress(metamask.address);
@@ -31,41 +54,87 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
       
       if (authInfo && authInfo.walletAddress.toLowerCase() === metamask.address.toLowerCase()) {
         // Re-authenticate with existing identity
-        const encryptionKey = await reauthenticateWithWallet(
-          checksummedAddress,
-          authInfo.authNonce,
-          authInfo.authTimestamp
-        );
-        
-        const userIdentity = await loadIdentity(metamask.address, encryptionKey);
-        if (!userIdentity) {
-          throw new Error('Failed to decrypt identity');
+        try {
+          const encryptionKey = await reauthenticateWithWallet(
+            checksummedAddress,
+            authInfo.authNonce,
+            authInfo.authTimestamp
+          );
+          
+          const userIdentity = await loadIdentity(metamask.address, encryptionKey);
+          
+          if (!userIdentity) {
+            // Decrypt failed - clear stale identity and create fresh one
+            throw new Error('DECRYPT_FAILED');
+          }
+          
+          const meta = identityToMetaAddress(userIdentity);
+          const metaAddress = encodeMetaAddress(meta);
+          onIdentityReady(userIdentity, metaAddress);
+          return;
+        } catch (decryptError) {
+          // Handle decrypt failure by creating fresh identity
+          console.warn('Failed to decrypt stored identity, creating new one');
+          await clearIdentity(metamask.address);
+          setWarningMessage('Previous local identity couldn\'t be unlocked — created a new one.');
         }
-        
-        const meta = identityToMetaAddress(userIdentity);
-        const metaAddress = encodeMetaAddress(meta);
-        onIdentityReady(userIdentity, metaAddress);
-      } else {
-        // Create new identity bound to this wallet
-        const { encryptionKey, nonce } = await authenticateWithWallet(checksummedAddress);
-        
-        const userIdentity = generateStealthIdentity();
-        await storeIdentity(
-          userIdentity,
-          metamask.address,
-          encryptionKey,
-          nonce,
-          new Date().toISOString()
-        );
-        
-        const meta = identityToMetaAddress(userIdentity);
-        const metaAddress = encodeMetaAddress(meta);
-        onIdentityReady(userIdentity, metaAddress);
       }
+      
+      // Create new identity bound to this wallet
+      const { encryptionKey, nonce } = await authenticateWithWallet(checksummedAddress);
+      
+      const userIdentity = generateStealthIdentity();
+      await storeIdentity(
+        userIdentity,
+        metamask.address,
+        encryptionKey,
+        nonce,
+        new Date().toISOString()
+      );
+      
+      const meta = identityToMetaAddress(userIdentity);
+      const metaAddress = encodeMetaAddress(meta);
+      onIdentityReady(userIdentity, metaAddress);
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Authentication failed');
+      if (error instanceof Error && error.message !== 'DECRYPT_FAILED') {
+        setAuthError(error.message);
+      } else if (error instanceof Error && error.message === 'DECRYPT_FAILED') {
+        setAuthError('Failed to unlock previous identity');
+      } else {
+        setAuthError('Authentication failed');
+      }
     } finally {
       setIsAuthenticating(false);
+    }
+  };
+
+  const handleResetIdentity = async () => {
+    if (!metamask.address) return;
+    
+    await clearIdentity(metamask.address);
+    setAuthError('');
+    setWarningMessage('Local identity cleared. Sign to create a new one.');
+  };
+
+  const handleLookupENS = async () => {
+    if (!ensLookup.trim()) return;
+    
+    setLookupResult('Resolving...');
+    try {
+      const result = await forwardResolveENSWithNetwork(ensLookup.trim(), metamask.address);
+      if (result) {
+        const matches = result.address.toLowerCase() === metamask.address?.toLowerCase();
+        const networkLabel = result.network === 'sepolia' ? 'Sepolia' : 'mainnet';
+        setLookupResult(
+          matches 
+            ? `✓ ${ensLookup} resolves to your address (${networkLabel})` 
+            : `${ensLookup} resolves to ${result.address.slice(0, 10)}... on ${networkLabel} (not your address)`
+        );
+      } else {
+        setLookupResult(`${ensLookup} not found on Sepolia or mainnet`);
+      }
+    } catch (error) {
+      setLookupResult('Resolution failed');
     }
   };
 
@@ -101,11 +170,27 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
             </div>
           )}
 
-          {(metamask.error || authError) && (
+          {warningMessage && (
             <div className="card p-4" style={{ borderColor: 'var(--warn)' }}>
+              <p style={{ color: 'var(--warn)', fontSize: '13px' }}>
+                {warningMessage}
+              </p>
+            </div>
+          )}
+
+          {(metamask.error || authError) && (
+            <div className="card p-4 space-y-3" style={{ borderColor: 'var(--warn)' }}>
               <p style={{ color: 'var(--warn)', fontSize: '13px' }}>
                 {authError || metamask.error}
               </p>
+              {authError.includes('decrypt') && (
+                <button
+                  onClick={handleResetIdentity}
+                  className="btn btn-secondary w-full text-sm"
+                >
+                  Reset Local Identity
+                </button>
+              )}
             </div>
           )}
 
@@ -118,12 +203,75 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
                     <p style={{ color: 'var(--success)', fontSize: '13px', fontWeight: 600 }}>
                       Connected
                     </p>
-                    <p className="mono truncate" style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
-                      {toChecksumAddress(metamask.address!)}
-                    </p>
+                    
+                    {isResolvingENS ? (
+                      <p style={{ color: 'var(--text-tertiary)', fontSize: '12px' }}>
+                        Resolving ENS...
+                      </p>
+                    ) : ensResult ? (
+                      <>
+                        <p style={{ color: 'var(--accent)', fontSize: '15px', fontWeight: 600, marginTop: '4px' }}>
+                          {ensResult.name}
+                        </p>
+                        <p className="mono truncate" style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>
+                          {toChecksumAddress(metamask.address!)}
+                        </p>
+                        {ensResult.network === 'mainnet' && (
+                          <p style={{ color: 'var(--text-tertiary)', fontSize: '10px', fontStyle: 'italic' }}>
+                            mainnet ENS
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <p className="mono truncate" style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                          {toChecksumAddress(metamask.address!)}
+                        </p>
+                        <p style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>
+                          No ENS name
+                        </p>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
+
+              {/* Optional ENS lookup */}
+              {!ensResult && (
+                <div className="card p-4 space-y-3" style={{ backgroundColor: 'var(--elevated)' }}>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600 }}>
+                    Look up ENS name
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={ensLookup}
+                      onChange={(e) => setEnsLookup(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleLookupENS()}
+                      placeholder="name.eth"
+                      className="flex-1 px-3 py-2 rounded-lg text-sm"
+                      style={{
+                        backgroundColor: 'var(--surface)',
+                        border: '1px solid var(--border)',
+                        color: 'var(--text-primary)',
+                        outline: 'none'
+                      }}
+                    />
+                    <button
+                      onClick={handleLookupENS}
+                      disabled={!ensLookup.trim()}
+                      className="btn btn-secondary text-sm px-4"
+                    >
+                      →
+                    </button>
+                  </div>
+                  {lookupResult && (
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                      {lookupResult}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={handleConnect}
