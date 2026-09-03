@@ -79,31 +79,104 @@ export class MockProtocolAdapter implements ProtocolAdapter {
 }
 
 /**
- * Live adapter for actual blockchain (placeholder for viem integration)
+ * Live adapter for actual blockchain
+ * Requires ERC-6538 registry and ERC-5564 announcer contracts
  */
 export class LiveProtocolAdapter implements ProtocolAdapter {
   mode: 'live' = 'live';
 
   constructor(
     private chainId: number,
-    private registryAddress?: string,
-    private announcerAddress?: string
+    private registryAddress: string,
+    private announcerAddress: string
   ) {}
 
   async resolveENS(name: string): Promise<string | null> {
-    throw new Error('Live ENS resolution not implemented in prototype');
+    // ENS resolution requires mainnet or ENS-supporting chains
+    // This would need a full ENS resolver implementation
+    // For now, users must provide Ethereum addresses directly
+    console.warn('ENS resolution not implemented - provide Ethereum addresses directly');
+    return null;
   }
 
   async getMetaAddress(address: string): Promise<StealthMetaAddress | null> {
-    throw new Error('Live ERC-6538 registry read not implemented in prototype');
+    const { checkRegistryDeployed, readMetaAddress } = await import('../blockchain/contracts');
+    
+    const isDeployed = await checkRegistryDeployed(this.registryAddress);
+    if (!isDeployed) {
+      throw new Error(
+        `ERC-6538 registry not deployed at ${this.registryAddress} on chain ${this.chainId}. ` +
+        'Cannot read meta-addresses without deployed contract. ' +
+        'Use mock mode for testing without contracts.'
+      );
+    }
+
+    return await readMetaAddress(this.registryAddress, address, BigInt(1));
   }
 
-  async publishAnnouncement(): Promise<string> {
-    throw new Error('Live ERC-5564 announcement not implemented in prototype');
+  async publishAnnouncement(
+    schemeId: bigint,
+    stealthAddress: string,
+    ephemeralPublicKey: string,
+    metadata: string,
+    viewTag: number
+  ): Promise<string> {
+    const { checkAnnouncerDeployed, publishAnnouncement } = await import('../blockchain/contracts');
+    
+    const isDeployed = await checkAnnouncerDeployed(this.announcerAddress);
+    if (!isDeployed) {
+      throw new Error(
+        `ERC-5564 announcer not deployed at ${this.announcerAddress} on chain ${this.chainId}. ` +
+        'Cannot publish announcements without deployed contract. ' +
+        'Use mock mode for testing without contracts.'
+      );
+    }
+
+    // Get connected wallet address
+    if (typeof window === 'undefined' || !window.ethereum) {
+      throw new Error('MetaMask not available');
+    }
+
+    const accounts = await window.ethereum.request({
+      method: 'eth_accounts',
+    }) as string[];
+
+    if (!accounts || accounts.length === 0) {
+      throw new Error('No wallet connected. Please connect MetaMask.');
+    }
+
+    return await publishAnnouncement(
+      this.announcerAddress,
+      accounts[0],
+      schemeId,
+      stealthAddress,
+      ephemeralPublicKey,
+      metadata
+    );
   }
 
-  async scanAnnouncements(): Promise<Announcement[]> {
-    throw new Error('Live announcement scanning not implemented in prototype');
+  async scanAnnouncements(fromBlock?: number): Promise<Announcement[]> {
+    const { checkAnnouncerDeployed, scanAnnouncements } = await import('../blockchain/contracts');
+    
+    const isDeployed = await checkAnnouncerDeployed(this.announcerAddress);
+    if (!isDeployed) {
+      throw new Error(
+        `ERC-5564 announcer not deployed at ${this.announcerAddress} on chain ${this.chainId}. ` +
+        'Cannot scan announcements without deployed contract.'
+      );
+    }
+
+    const events = await scanAnnouncements(this.announcerAddress, fromBlock || 0);
+    
+    return events.map(event => ({
+      schemeId: BigInt(event.schemeId),
+      stealthAddress: event.stealthAddress,
+      ephemeralPublicKey: event.ephemeralPublicKey,
+      metadata: event.metadata,
+      viewTag: 0, // Would need to parse from metadata
+      txHash: event.txHash,
+      timestamp: Date.now(), // Would need to get from block
+    }));
   }
 }
 
