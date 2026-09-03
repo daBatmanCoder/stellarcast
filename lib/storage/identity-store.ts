@@ -11,8 +11,10 @@ interface StealthDB extends DBSchema {
     key: string;
     value: {
       id: string;
+      walletAddress: string;
+      authNonce: string;
+      authTimestamp: string;
       encryptedIdentity: ArrayBuffer;
-      salt: ArrayBuffer;
       iv: ArrayBuffer;
       createdAt: number;
     };
@@ -53,29 +55,14 @@ export async function initDB(): Promise<void> {
 }
 
 /**
- * Derive encryption key from password using PBKDF2
- * Uses 600,000 iterations (OWASP 2023 recommendation for PBKDF2-SHA256)
+ * Import encryption key derived from wallet signature
  */
-async function deriveKeyFromPassword(
-  password: string,
-  salt: Uint8Array
+async function importEncryptionKey(
+  keyBytes: Uint8Array
 ): Promise<CryptoKey> {
-  const passwordKey = await crypto.subtle.importKey(
+  return crypto.subtle.importKey(
     'raw',
-    new TextEncoder().encode(password),
-    'PBKDF2',
-    false,
-    ['deriveKey']
-  );
-
-  return crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: new Uint8Array(salt),
-      iterations: 600_000,
-      hash: 'SHA-256',
-    },
-    passwordKey,
+    new Uint8Array(keyBytes),
     { name: 'AES-GCM', length: 256 },
     false,
     ['encrypt', 'decrypt']
@@ -83,16 +70,15 @@ async function deriveKeyFromPassword(
 }
 
 /**
- * Encrypt StealthIdentity with password
+ * Encrypt StealthIdentity with wallet-derived key
  */
 async function encryptIdentity(
   identity: StealthIdentity,
-  password: string
-): Promise<{ encrypted: ArrayBuffer; salt: ArrayBuffer; iv: ArrayBuffer }> {
-  const salt = crypto.getRandomValues(new Uint8Array(32));
+  encryptionKeyBytes: Uint8Array
+): Promise<{ encrypted: ArrayBuffer; iv: ArrayBuffer }> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
 
-  const key = await deriveKeyFromPassword(password, salt);
+  const key = await importEncryptionKey(encryptionKeyBytes);
 
   const plaintext = new Uint8Array(
     identity.spendingPrivateKey.length +
@@ -116,20 +102,19 @@ async function encryptIdentity(
     plaintext
   );
 
-  return { encrypted, salt: salt.buffer, iv: iv.buffer };
+  return { encrypted, iv: iv.buffer };
 }
 
 /**
- * Decrypt StealthIdentity with password
+ * Decrypt StealthIdentity with wallet-derived key
  */
 async function decryptIdentity(
   encrypted: ArrayBuffer,
-  salt: ArrayBuffer,
   iv: ArrayBuffer,
-  password: string
+  encryptionKeyBytes: Uint8Array
 ): Promise<StealthIdentity | null> {
   try {
-    const key = await deriveKeyFromPassword(password, new Uint8Array(salt));
+    const key = await importEncryptionKey(encryptionKeyBytes);
 
     const plaintext = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: new Uint8Array(iv) },
@@ -164,31 +149,37 @@ async function decryptIdentity(
 }
 
 /**
- * Store encrypted identity
+ * Store wallet-bound encrypted identity
  */
 export async function storeIdentity(
   identity: StealthIdentity,
-  password: string
+  walletAddress: string,
+  encryptionKey: Uint8Array,
+  authNonce: string,
+  authTimestamp: string
 ): Promise<void> {
   await initDB();
   if (!db) throw new Error('DB not initialized');
 
-  const { encrypted, salt, iv } = await encryptIdentity(identity, password);
+  const { encrypted, iv } = await encryptIdentity(identity, encryptionKey);
 
   await db.put('identity', {
     id: 'primary',
+    walletAddress: walletAddress.toLowerCase(),
+    authNonce,
+    authTimestamp,
     encryptedIdentity: encrypted,
-    salt,
     iv,
     createdAt: Date.now(),
   });
 }
 
 /**
- * Load encrypted identity
+ * Load wallet-bound encrypted identity
  */
 export async function loadIdentity(
-  password: string
+  walletAddress: string,
+  encryptionKey: Uint8Array
 ): Promise<StealthIdentity | null> {
   await initDB();
   if (!db) throw new Error('DB not initialized');
@@ -196,12 +187,37 @@ export async function loadIdentity(
   const record = await db.get('identity', 'primary');
   if (!record) return null;
 
+  // Verify wallet address matches
+  if (record.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+    throw new Error('Identity is bound to a different wallet address');
+  }
+
   return decryptIdentity(
     record.encryptedIdentity,
-    record.salt,
     record.iv,
-    password
+    encryptionKey
   );
+}
+
+/**
+ * Get stored auth info for re-authentication
+ */
+export async function getAuthInfo(): Promise<{
+  walletAddress: string;
+  authNonce: string;
+  authTimestamp: string;
+} | null> {
+  await initDB();
+  if (!db) throw new Error('DB not initialized');
+
+  const record = await db.get('identity', 'primary');
+  if (!record) return null;
+
+  return {
+    walletAddress: record.walletAddress,
+    authNonce: record.authNonce,
+    authTimestamp: record.authTimestamp,
+  };
 }
 
 /**
