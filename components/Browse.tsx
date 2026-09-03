@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { ProtocolAdapter } from '@/lib/protocol/adapters';
+import { ensCache, displayName } from '@/lib/ens/resolver';
 
 interface BrowseProps {
   adapter: ProtocolAdapter | null;
@@ -11,7 +12,8 @@ interface BrowseProps {
 interface Event {
   id: string;
   title: string;
-  host: string;
+  hostAddress: string;
+  hostName?: string | null;
   price: string;
   isLive: boolean;
   imageUrl?: string;
@@ -26,26 +28,11 @@ export function Browse({ adapter, onSelectEvent }: BrowseProps) {
     const fetchEvents = async () => {
       setIsLoading(true);
       try {
-        // For now, use demo data since we don't have a full event registry
-        // In production, this would query the contract
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // TODO: Query real events from on-chain registry or announcements
+        // For now, empty state - no fake catalogs
+        await new Promise(resolve => setTimeout(resolve, 300));
         
-        setEvents([
-          {
-            id: '1',
-            title: 'Private Crypto Workshop',
-            host: '0x1234...5678',
-            price: '0.05 ETH',
-            isLive: true
-          },
-          {
-            id: '2', 
-            title: 'DeFi Deep Dive',
-            host: '0xabcd...ef01',
-            price: '0.03 ETH',
-            isLive: false
-          }
-        ]);
+        setEvents([]);
       } catch (error) {
         console.error('Failed to fetch events:', error);
       } finally {
@@ -55,6 +42,26 @@ export function Browse({ adapter, onSelectEvent }: BrowseProps) {
 
     fetchEvents();
   }, [adapter]);
+
+  // Resolve ENS names for all hosts
+  useEffect(() => {
+    const resolveENS = async () => {
+      for (const event of events) {
+        if (!event.hostName) {
+          const ensName = await ensCache.resolve(event.hostAddress);
+          if (ensName) {
+            setEvents(prev => prev.map(e => 
+              e.id === event.id ? { ...e, hostName: ensName } : e
+            ));
+          }
+        }
+      }
+    };
+
+    if (events.length > 0) {
+      resolveENS();
+    }
+  }, [events]);
 
   if (isLoading) {
     return (
@@ -74,13 +81,18 @@ export function Browse({ adapter, onSelectEvent }: BrowseProps) {
   if (events.length === 0) {
     return (
       <div className="container-custom py-32 text-center">
-        <div className="max-w-md mx-auto space-y-4">
-          <div style={{ fontSize: '3rem' }}>📹</div>
-          <h3 style={{ fontSize: '1.5rem', fontWeight: 600 }}>
-            No events yet
-          </h3>
-          <p style={{ color: 'var(--text-secondary)' }}>
-            Check back soon for live events
+        <div className="max-w-md mx-auto space-y-6">
+          <div style={{ fontSize: '4rem' }}>📹</div>
+          <div className="space-y-2">
+            <h3 style={{ fontSize: '1.5rem', fontWeight: 600 }}>
+              No live events
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+              Event discovery coming soon. Creators will register stealth meta-addresses and announce streams on-chain.
+            </p>
+          </div>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>
+            Events will be queryable from ERC-6538 registry and ERC-5564 announcements on Sepolia
           </p>
         </div>
       </div>
@@ -126,7 +138,7 @@ export function Browse({ adapter, onSelectEvent }: BrowseProps) {
                   className="mono truncate"
                   style={{ color: 'var(--text-secondary)' }}
                 >
-                  {event.host}
+                  {displayName(event.hostAddress, event.hostName)}
                 </span>
                 <span 
                   className="mono font-semibold"
