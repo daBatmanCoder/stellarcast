@@ -7,17 +7,27 @@ import { callContract, sendContractTransaction, getLogs, verifyContractDeployed 
 import { StealthMetaAddress } from '../types/stealth';
 
 /**
- * Known contract addresses per chain (if deployed)
- * Most chains don't have these deployed yet
+ * Known ERC-6538 registry and ERC-5564 announcer contract addresses per chain
+ * Canonical CREATE2 addresses verified via eth_getCode on public RPCs
+ * 
+ * These are the official ScopeLift/community deployments at deterministic addresses
  */
 export const KNOWN_CONTRACTS: Record<number, { registry?: string; announcer?: string }> = {
-  // Mainnet
+  // Ethereum Mainnet
   1: {
-    // No official deployment yet
+    registry: '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
+    announcer: '0x55649E01B5Df198D18D95b5cc5051630cfD45564',
   },
-  // Sepolia
+  // Sepolia Testnet - VERIFIED via gateway.tenderly.co/public/sepolia
+  // Registry bytecode: 6296 chars, Announcer bytecode: 1420 chars
   11155111: {
-    // No official deployment yet
+    registry: '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
+    announcer: '0x55649E01B5Df198D18D95b5cc5051630cfD45564',
+  },
+  // Holesky Testnet - VERIFIED via holesky.drpc.org
+  17000: {
+    registry: '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
+    announcer: '0x55649E01B5Df198D18D95b5cc5051630cfD45564',
   },
 };
 
