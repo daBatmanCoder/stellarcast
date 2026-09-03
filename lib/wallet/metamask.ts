@@ -141,9 +141,65 @@ export async function switchChain(chainId: string): Promise<void> {
   } catch (error: unknown) {
     const switchError = error as { code: number; message: string };
     if (switchError.code === 4902) {
-      throw new Error(`Chain ${chainId} not added to MetaMask. Please add it manually.`);
+      // Chain not added, try to add it
+      throw new Error(`Chain ${chainId} not added to MetaMask. Attempting to add...`);
     }
     throw error;
+  }
+}
+
+/**
+ * Add Sepolia network to MetaMask if missing
+ */
+export async function addSepoliaNetwork(): Promise<void> {
+  if (!isMetaMaskInstalled()) {
+    throw new Error('MetaMask is not installed');
+  }
+
+  try {
+    await window.ethereum!.request({
+      method: 'wallet_addEthereumChain',
+      params: [{
+        chainId: '0xaa36a7',
+        chainName: 'Sepolia Testnet',
+        nativeCurrency: {
+          name: 'Sepolia ETH',
+          symbol: 'SepoliaETH',
+          decimals: 18,
+        },
+        rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com'],
+        blockExplorerUrls: ['https://sepolia.etherscan.io'],
+      }],
+    });
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to add Sepolia network: ${error.message}`);
+    }
+    throw new Error('Failed to add Sepolia network');
+  }
+}
+
+/**
+ * Ensure user is on Sepolia network
+ * Attempts to switch, adds network if needed
+ */
+export async function ensureSepoliaNetwork(): Promise<void> {
+  const currentChainId = await getChainId();
+  
+  if (currentChainId === '0xaa36a7') {
+    // Already on Sepolia
+    return;
+  }
+
+  try {
+    await switchChain('0xaa36a7');
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('not added')) {
+      // Try to add the network
+      await addSepoliaNetwork();
+    } else {
+      throw error;
+    }
   }
 }
 

@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'STELLARCAST - Private Livestream Events',
-  description: 'Pay-to-view livestreams with privacy-preserving stealth addresses. Watch without revealing your identity.',
+  title: 'Stellarcast - Private Livestream Events on Sepolia',
+  description: 'Pay for exclusive livestream access using ERC-5564 stealth addresses. Privacy-preserving payments on Sepolia testnet.',
 };
 
 export default function RootLayout({

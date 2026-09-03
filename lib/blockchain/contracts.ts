@@ -10,26 +10,42 @@ import { StealthMetaAddress } from '../types/stealth';
  * Known ERC-6538 registry and ERC-5564 announcer contract addresses per chain
  * Canonical CREATE2 addresses verified via eth_getCode on public RPCs
  * 
- * These are the official ScopeLift/community deployments at deterministic addresses
+ * PRODUCTION: Sepolia only (chain ID 11155111)
+ * Other chains listed for reference but not supported in product UX
  */
 export const KNOWN_CONTRACTS: Record<number, { registry?: string; announcer?: string }> = {
-  // Ethereum Mainnet
-  1: {
-    registry: '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
-    announcer: '0x55649E01B5Df198D18D95b5cc5051630cfD45564',
-  },
-  // Sepolia Testnet - VERIFIED via gateway.tenderly.co/public/sepolia
+  // Sepolia Testnet - PRIMARY SUPPORTED CHAIN
+  // VERIFIED via gateway.tenderly.co/public/sepolia
   // Registry bytecode: 6296 chars, Announcer bytecode: 1420 chars
   11155111: {
     registry: '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
     announcer: '0x55649E01B5Df198D18D95b5cc5051630cfD45564',
   },
-  // Holesky Testnet - VERIFIED via holesky.drpc.org
+  
+  // Reference only - not supported in production UX
+  // Ethereum Mainnet (contracts exist but app is Sepolia-only)
+  1: {
+    registry: '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
+    announcer: '0x55649E01B5Df198D18D95b5cc5051630cfD45564',
+  },
+  // Holesky Testnet (verified but not in product flow)
   17000: {
     registry: '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
     announcer: '0x55649E01B5Df198D18D95b5cc5051630cfD45564',
   },
 };
+
+/**
+ * Primary supported chain for production
+ */
+export const SEPOLIA_CHAIN_ID = 11155111;
+
+/**
+ * Check if chain is supported in production UX
+ */
+export function isSupportedChain(chainId: number): boolean {
+  return chainId === SEPOLIA_CHAIN_ID;
+}
 
 /**
  * ERC-6538: stealthMetaAddressOf(address,uint256) selector
