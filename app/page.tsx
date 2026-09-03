@@ -20,7 +20,6 @@ import { NetworkGuard } from '@/components/NetworkGuard';
 import { Browse } from '@/components/Browse';
 import { PaymentSlideOver } from '@/components/PaymentSlideOver';
 import { RecipientScan } from '@/components/RecipientScan';
-import { ensCache, type ENSResult } from '@/lib/ens/resolver';
 
 type ViewState = 'landing' | 'wallet-connect' | 'browse' | 'scan' | 'stream';
 type PaymentStatus = 'idle' | 'pending' | 'confirming' | 'success' | 'error';
@@ -37,23 +36,11 @@ export default function Home() {
   const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>('new');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [headerEnsResult, setHeaderEnsResult] = useState<ENSResult | null>(null);
+  const [verifiedEnsName, setVerifiedEnsName] = useState<string>('');
   
   const metamask = useMetaMask();
 
-  // Resolve header ENS name
-  useEffect(() => {
-    const resolveHeaderENS = async () => {
-      if (metamask.isConnected && metamask.address && identity) {
-        const result = await ensCache.resolve(metamask.address);
-        setHeaderEnsResult(result);
-      } else {
-        setHeaderEnsResult(null);
-      }
-    };
-
-    resolveHeaderENS();
-  }, [metamask.isConnected, metamask.address, identity]);
+  // No longer need to resolve ENS here - it comes from verified flow
 
   // Initialize protocol adapter
   useEffect(() => {
@@ -91,9 +78,10 @@ export default function Home() {
     initAdapter();
   }, [metamask.isConnected, metamask.chainId]);
 
-  const handleIdentityReady = (userIdentity: StealthIdentity, userMetaAddress: string) => {
+  const handleIdentityReady = (userIdentity: StealthIdentity, userMetaAddress: string, ensName?: string) => {
     setIdentity(userIdentity);
     setMetaAddress(userMetaAddress);
+    setVerifiedEnsName(ensName || '');
     setViewState('browse');
   };
 
@@ -236,21 +224,19 @@ export default function Home() {
                 <div className="card px-3 py-2 flex items-center gap-2">
                   <div className="status-dot" style={{ backgroundColor: 'var(--success)' }}></div>
                   <div className="flex flex-col min-w-0">
-                    {headerEnsResult ? (
+                    {verifiedEnsName ? (
                       <>
                         <div className="flex items-center gap-1">
                           <span className="text-xs font-semibold truncate" style={{ color: 'var(--accent)' }}>
-                            {headerEnsResult.name}
+                            {verifiedEnsName}
                           </span>
-                          {headerEnsResult.network === 'mainnet' && (
-                            <span className="text-[9px] px-1 rounded" style={{ 
-                              color: 'var(--text-tertiary)', 
-                              backgroundColor: 'var(--elevated)',
-                              fontStyle: 'italic'
-                            }}>
-                              mainnet
-                            </span>
-                          )}
+                          <span className="text-[9px] px-1 rounded" style={{ 
+                            color: 'var(--success)', 
+                            backgroundColor: 'var(--elevated)',
+                            fontWeight: 600
+                          }}>
+                            ✓
+                          </span>
                         </div>
                         <span className="mono text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>
                           {metamask.address?.slice(0, 6)}...{metamask.address?.slice(-4)}

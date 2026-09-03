@@ -4,59 +4,162 @@ import { useState, useEffect } from 'react';
 import { useMetaMask } from '@/lib/wallet/useMetaMask';
 import { toChecksumAddress, authenticateWithWallet, reauthenticateWithWallet } from '@/lib/wallet/wallet-auth';
 import { generateStealthIdentity, identityToMetaAddress, encodeMetaAddress } from '@/lib/crypto/identity';
-import { storeIdentity, loadIdentity, hasIdentity, getAuthInfo, clearIdentity } from '@/lib/storage/identity-store';
-import { ensCache, forwardResolveENSWithNetwork, type ENSResult } from '@/lib/ens/resolver';
+import { storeIdentity, loadIdentity, getAuthInfo, clearIdentity } from '@/lib/storage/identity-store';
+import { resolveSepoliaENS, reverseResolveSepoliaENS } from '@/lib/ens/resolver';
+import { requestENSOwnershipSignature, verifyENSOwnership } from '@/lib/ens/ownership';
+import { storeENSVerification, getENSVerification } from '@/lib/storage/ens-store';
 import type { StealthIdentity } from '@/lib/types/stealth';
 
+type FlowStep = 'connect' | 'claim-ens' | 'sign-proof' | 'authenticating';
+
 interface WalletConnectProps {
-  onIdentityReady: (identity: StealthIdentity, metaAddress: string) => void;
+  onIdentityReady: (identity: StealthIdentity, metaAddress: string, ensName?: string) => void;
 }
 
 export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
   const metamask = useMetaMask();
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [flowStep, setFlowStep] = useState<FlowStep>('connect');
   const [authError, setAuthError] = useState<string>('');
   const [warningMessage, setWarningMessage] = useState<string>('');
-  const [ensResult, setEnsResult] = useState<ENSResult | null>(null);
+  
+  // ENS claim state
+  const [claimedENS, setClaimedENS] = useState<string>('');
+  const [suggestedENS, setSuggestedENS] = useState<string>('');
   const [isResolvingENS, setIsResolvingENS] = useState(false);
-  const [ensLookup, setEnsLookup] = useState<string>('');
-  const [lookupResult, setLookupResult] = useState<string>('');
+  const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+  const [addressMatch, setAddressMatch] = useState<boolean | null>(null);
 
-  // Resolve ENS name when wallet connects
+  // Suggest ENS from reverse resolution when wallet connects
   useEffect(() => {
-    const resolveENS = async () => {
-      if (metamask.isConnected && metamask.address) {
+    const suggestENS = async () => {
+      if (metamask.isConnected && metamask.address && flowStep === 'claim-ens') {
         setIsResolvingENS(true);
-        const result = await ensCache.resolve(metamask.address);
-        setEnsResult(result);
+        const reverseName = await reverseResolveSepoliaENS(metamask.address);
+        if (reverseName) {
+          setSuggestedENS(reverseName);
+          setClaimedENS(reverseName);
+        }
         setIsResolvingENS(false);
-      } else {
-        setEnsResult(null);
       }
     };
 
-    resolveENS();
-  }, [metamask.isConnected, metamask.address]);
+    suggestENS();
+  }, [metamask.isConnected, metamask.address, flowStep]);
 
-  const handleConnect = async () => {
+  // Step 1: Connect wallet
+  const handleWalletConnect = async () => {
     const success = await metamask.connect();
-    if (!success || !metamask.address) return;
+    if (success && metamask.address) {
+      // Check if already has verified ENS
+      const existing = await getENSVerification(metamask.address);
+      if (existing) {
+        setClaimedENS(existing.ensName);
+        // Skip to auth
+        await handleAuthenticate(existing.ensName);
+      } else {
+        setFlowStep('claim-ens');
+      }
+    }
+  };
 
-    setIsAuthenticating(true);
+  // Step 2: Verify ENS forward-resolves to connected address
+  const handleVerifyENS = async () => {
+    if (!claimedENS.trim() || !metamask.address) return;
+
+    setIsResolvingENS(true);
     setAuthError('');
-    setWarningMessage('');
+    
+    try {
+      const resolved = await resolveSepoliaENS(claimedENS.trim());
+      setResolvedAddress(resolved);
+      
+      if (resolved) {
+        const matches = resolved.toLowerCase() === metamask.address.toLowerCase();
+        setAddressMatch(matches);
+        
+        if (matches) {
+          setFlowStep('sign-proof');
+        } else {
+          setAuthError(`${claimedENS} resolves to ${resolved.slice(0, 10)}... (not your address)`);
+        }
+      } else {
+        setAuthError(`${claimedENS} not found on Sepolia`);
+        setAddressMatch(false);
+      }
+    } catch (error) {
+      setAuthError('ENS resolution failed');
+      setAddressMatch(false);
+    } finally {
+      setIsResolvingENS(false);
+    }
+  };
+
+  // Step 3: Sign ownership proof
+  const handleSignProof = async () => {
+    if (!metamask.address || !claimedENS) return;
+
+    setFlowStep('authenticating');
+    setAuthError('');
 
     try {
-      const checksummedAddress = toChecksumAddress(metamask.address);
+      const checksummed = toChecksumAddress(metamask.address);
       
-      // Check if identity already exists for this wallet
+      // Request signature
+      const { message, signature } = await requestENSOwnershipSignature(
+        claimedENS,
+        checksummed
+      );
+
+      // Verify signature client-side
+      const valid = await verifyENSOwnership(
+        claimedENS,
+        checksummed,
+        signature,
+        message
+      );
+
+      if (!valid) {
+        throw new Error('Signature verification failed');
+      }
+
+      // Store verified binding
+      await storeENSVerification({
+        walletAddress: metamask.address,
+        ensName: claimedENS,
+        chainId: 11155111,
+        message,
+        signature,
+        verifiedAt: new Date().toISOString()
+      });
+
+      // Continue to auth
+      await handleAuthenticate(claimedENS);
+    } catch (error) {
+      setFlowStep('sign-proof');
+      setAuthError(error instanceof Error ? error.message : 'Signature failed');
+    }
+  };
+
+  // Continue without ENS
+  const handleContinueWithoutENS = async () => {
+    setFlowStep('authenticating');
+    await handleAuthenticate();
+  };
+
+  // Final authentication step
+  const handleAuthenticate = async (ensName?: string) => {
+    if (!metamask.address) return;
+
+    try {
+      const checksummed = toChecksumAddress(metamask.address);
+      
+      // Check for existing identity
       const authInfo = await getAuthInfo();
       
       if (authInfo && authInfo.walletAddress.toLowerCase() === metamask.address.toLowerCase()) {
-        // Re-authenticate with existing identity
         try {
           const encryptionKey = await reauthenticateWithWallet(
-            checksummedAddress,
+            checksummed,
             authInfo.authNonce,
             authInfo.authTimestamp
           );
@@ -64,26 +167,23 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
           const userIdentity = await loadIdentity(metamask.address, encryptionKey);
           
           if (!userIdentity) {
-            // Decrypt failed - clear stale identity and create fresh one
             throw new Error('DECRYPT_FAILED');
           }
           
           const meta = identityToMetaAddress(userIdentity);
           const metaAddress = encodeMetaAddress(meta);
-          onIdentityReady(userIdentity, metaAddress);
+          onIdentityReady(userIdentity, metaAddress, ensName);
           return;
         } catch (decryptError) {
-          // Handle decrypt failure by creating fresh identity
-          console.warn('Failed to decrypt stored identity, creating new one');
           await clearIdentity(metamask.address);
-          setWarningMessage('Previous local identity couldn\'t be unlocked — created a new one.');
+          setWarningMessage('Previous identity couldn\'t be unlocked — created a new one.');
         }
       }
       
-      // Create new identity bound to this wallet
-      const { encryptionKey, nonce } = await authenticateWithWallet(checksummedAddress);
-      
+      // Create new identity
+      const { encryptionKey, nonce } = await authenticateWithWallet(checksummed);
       const userIdentity = generateStealthIdentity();
+      
       await storeIdentity(
         userIdentity,
         metamask.address,
@@ -94,82 +194,68 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
       
       const meta = identityToMetaAddress(userIdentity);
       const metaAddress = encodeMetaAddress(meta);
-      onIdentityReady(userIdentity, metaAddress);
+      onIdentityReady(userIdentity, metaAddress, ensName);
     } catch (error) {
-      if (error instanceof Error && error.message !== 'DECRYPT_FAILED') {
-        setAuthError(error.message);
-      } else if (error instanceof Error && error.message === 'DECRYPT_FAILED') {
-        setAuthError('Failed to unlock previous identity');
-      } else {
-        setAuthError('Authentication failed');
-      }
-    } finally {
-      setIsAuthenticating(false);
+      setFlowStep('claim-ens');
+      setAuthError(error instanceof Error ? error.message : 'Authentication failed');
     }
   };
 
-  const handleResetIdentity = async () => {
-    if (!metamask.address) return;
-    
-    await clearIdentity(metamask.address);
-    setAuthError('');
-    setWarningMessage('Local identity cleared. Sign to create a new one.');
-  };
-
-  const handleLookupENS = async () => {
-    if (!ensLookup.trim()) return;
-    
-    setLookupResult('Resolving...');
-    try {
-      const result = await forwardResolveENSWithNetwork(ensLookup.trim(), metamask.address);
-      if (result) {
-        const matches = result.address.toLowerCase() === metamask.address?.toLowerCase();
-        const networkLabel = result.network === 'sepolia' ? 'Sepolia' : 'mainnet';
-        setLookupResult(
-          matches 
-            ? `✓ ${ensLookup} resolves to your address (${networkLabel})` 
-            : `${ensLookup} resolves to ${result.address.slice(0, 10)}... on ${networkLabel} (not your address)`
-        );
-      } else {
-        setLookupResult(`${ensLookup} not found on Sepolia or mainnet`);
-      }
-    } catch (error) {
-      setLookupResult('Resolution failed');
-    }
-  };
+  // Render UI based on flow step
+  if (!metamask.isInstalled) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="w-full max-w-[420px] animate-fade-in">
+          <div className="card p-8 space-y-6">
+            <div className="text-center space-y-3">
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 600 }}>
+                MetaMask Required
+              </h2>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+                Install MetaMask to continue
+              </p>
+            </div>
+            <a 
+              href="https://metamask.io/download/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="btn btn-primary w-full"
+            >
+              Install MetaMask
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="w-full max-w-[420px] animate-fade-in">
+      <div className="w-full max-w-[500px] animate-fade-in">
         <div className="card p-8 space-y-6">
-          <div className="text-center space-y-3">
-            <h2 style={{ fontSize: '1.5rem', fontWeight: 600, letterSpacing: '-0.02em' }}>
-              Connect Wallet
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-              Connect MetaMask to create your stealth identity
-            </p>
+          {/* Progress indicator */}
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${
+              flowStep === 'connect' ? 'bg-[var(--accent)]' : 'bg-[var(--elevated)]'
+            }`} style={{ color: 'var(--text-primary)' }}>
+              1
+            </div>
+            <div className="w-12 h-0.5 bg-[var(--border)]"></div>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${
+              flowStep === 'claim-ens' || flowStep === 'sign-proof' || flowStep === 'authenticating' 
+                ? 'bg-[var(--accent)]' : 'bg-[var(--elevated)]'
+            }`} style={{ color: 'var(--text-primary)' }}>
+              2
+            </div>
+            <div className="w-12 h-0.5 bg-[var(--border)]"></div>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold ${
+              flowStep === 'sign-proof' || flowStep === 'authenticating' ? 'bg-[var(--accent)]' : 'bg-[var(--elevated)]'
+            }`} style={{ color: 'var(--text-primary)' }}>
+              3
+            </div>
           </div>
 
-          {!metamask.isInstalled && (
-            <div className="card p-4 space-y-3" style={{ borderColor: 'var(--warn)' }}>
-              <p style={{ color: 'var(--warn)', fontWeight: 600, fontSize: '14px' }}>
-                MetaMask Not Detected
-              </p>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-                Please install MetaMask to continue
-              </p>
-              <a 
-                href="https://metamask.io/download/" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="btn btn-primary w-full"
-              >
-                Install MetaMask
-              </a>
-            </div>
-          )}
-
+          {/* Messages */}
           {warningMessage && (
             <div className="card p-4" style={{ borderColor: 'var(--warn)' }}>
               <p style={{ color: 'var(--warn)', fontSize: '13px' }}>
@@ -178,131 +264,192 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
             </div>
           )}
 
-          {(metamask.error || authError) && (
-            <div className="card p-4 space-y-3" style={{ borderColor: 'var(--warn)' }}>
+          {authError && (
+            <div className="card p-4" style={{ borderColor: 'var(--warn)' }}>
               <p style={{ color: 'var(--warn)', fontSize: '13px' }}>
-                {authError || metamask.error}
+                {authError}
               </p>
-              {authError.includes('decrypt') && (
-                <button
-                  onClick={handleResetIdentity}
-                  className="btn btn-secondary w-full text-sm"
-                >
-                  Reset Local Identity
-                </button>
-              )}
             </div>
           )}
 
-          {metamask.isConnected && !isAuthenticating ? (
-            <div className="space-y-4">
-              <div className="card p-4" style={{ borderColor: 'var(--success)' }}>
-                <div className="flex items-center gap-3">
-                  <div className="status-dot" style={{ backgroundColor: 'var(--success)' }}></div>
-                  <div className="flex-1 min-w-0">
-                    <p style={{ color: 'var(--success)', fontSize: '13px', fontWeight: 600 }}>
-                      Connected
-                    </p>
-                    
-                    {isResolvingENS ? (
-                      <p style={{ color: 'var(--text-tertiary)', fontSize: '12px' }}>
-                        Resolving ENS...
-                      </p>
-                    ) : ensResult ? (
-                      <>
-                        <p style={{ color: 'var(--accent)', fontSize: '15px', fontWeight: 600, marginTop: '4px' }}>
-                          {ensResult.name}
-                        </p>
-                        <p className="mono truncate" style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>
-                          {toChecksumAddress(metamask.address!)}
-                        </p>
-                        {ensResult.network === 'mainnet' && (
-                          <p style={{ color: 'var(--text-tertiary)', fontSize: '10px', fontStyle: 'italic' }}>
-                            mainnet ENS
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <p className="mono truncate" style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
-                          {toChecksumAddress(metamask.address!)}
-                        </p>
-                        <p style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>
-                          No ENS name
-                        </p>
-                      </>
-                    )}
-                  </div>
-                </div>
+          {/* Step 1: Connect */}
+          {flowStep === 'connect' && (
+            <div className="space-y-6">
+              <div className="text-center space-y-2">
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 600 }}>
+                  Connect Wallet
+                </h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+                  Connect MetaMask on Sepolia to continue
+                </p>
               </div>
 
-              {/* Optional ENS lookup */}
-              {!ensResult && (
-                <div className="card p-4 space-y-3" style={{ backgroundColor: 'var(--elevated)' }}>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600 }}>
-                    Look up ENS name
+              <button
+                onClick={handleWalletConnect}
+                disabled={metamask.isConnecting}
+                className="btn btn-primary w-full"
+              >
+                {metamask.isConnecting ? 'Connecting...' : 'Connect MetaMask'}
+              </button>
+            </div>
+          )}
+
+          {/* Step 2: Claim ENS */}
+          {flowStep === 'claim-ens' && metamask.isConnected && (
+            <div className="space-y-6">
+              <div className="text-center space-y-2">
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 600 }}>
+                  Claim ENS
+                </h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+                  Verify ownership of your Sepolia ENS name
+                </p>
+              </div>
+
+              <div className="card p-4" style={{ backgroundColor: 'var(--elevated)' }}>
+                <p className="mono text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
+                  {metamask.address}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label style={{ color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 600 }}>
+                  ENS Name
+                </label>
+                <input
+                  type="text"
+                  value={claimedENS}
+                  onChange={(e) => setClaimedENS(e.target.value)}
+                  placeholder="name.eth"
+                  disabled={isResolvingENS}
+                  className="w-full px-4 py-3 rounded-lg"
+                  style={{
+                    backgroundColor: 'var(--elevated)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-primary)',
+                    outline: 'none',
+                    fontSize: '15px'
+                  }}
+                />
+                {suggestedENS && suggestedENS !== claimedENS && (
+                  <button
+                    onClick={() => setClaimedENS(suggestedENS)}
+                    className="text-xs"
+                    style={{ color: 'var(--accent)' }}
+                  >
+                    Use suggested: {suggestedENS}
+                  </button>
+                )}
+              </div>
+
+              {addressMatch !== null && (
+                <div className={`card p-4`} style={{ 
+                  borderColor: addressMatch ? 'var(--success)' : 'var(--warn)' 
+                }}>
+                  <p style={{ 
+                    color: addressMatch ? 'var(--success)' : 'var(--warn)', 
+                    fontSize: '13px' 
+                  }}>
+                    {addressMatch 
+                      ? `✓ ${claimedENS} resolves to your address`
+                      : `✗ Address mismatch`
+                    }
                   </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={ensLookup}
-                      onChange={(e) => setEnsLookup(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleLookupENS()}
-                      placeholder="name.eth"
-                      className="flex-1 px-3 py-2 rounded-lg text-sm"
-                      style={{
-                        backgroundColor: 'var(--surface)',
-                        border: '1px solid var(--border)',
-                        color: 'var(--text-primary)',
-                        outline: 'none'
-                      }}
-                    />
-                    <button
-                      onClick={handleLookupENS}
-                      disabled={!ensLookup.trim()}
-                      className="btn btn-secondary text-sm px-4"
-                    >
-                      →
-                    </button>
-                  </div>
-                  {lookupResult && (
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
-                      {lookupResult}
+                  {resolvedAddress && (
+                    <p className="mono text-xs truncate mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                      Resolves to: {resolvedAddress}
                     </p>
                   )}
                 </div>
               )}
 
-              <button
-                onClick={handleConnect}
-                className="btn btn-primary w-full"
-              >
-                Sign to Continue
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={handleVerifyENS}
+                  disabled={!claimedENS.trim() || isResolvingENS}
+                  className="btn btn-primary w-full"
+                >
+                  {isResolvingENS ? 'Verifying...' : 'Verify ENS'}
+                </button>
 
-              <p style={{ color: 'var(--text-tertiary)', fontSize: '12px', lineHeight: '1.5' }}>
-                Sign a message to encrypt your stealth keys locally. This does not grant access to your funds.
+                <button
+                  onClick={handleContinueWithoutENS}
+                  className="btn btn-secondary w-full text-sm"
+                >
+                  Continue without ENS
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Sign Proof */}
+          {flowStep === 'sign-proof' && (
+            <div className="space-y-6">
+              <div className="text-center space-y-2">
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 600 }}>
+                  Prove Ownership
+                </h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+                  Sign a message to prove you own {claimedENS}
+                </p>
+              </div>
+
+              <div className="card p-4 space-y-3" style={{ backgroundColor: 'var(--elevated)' }}>
+                <div className="flex items-center justify-between">
+                  <span style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>ENS</span>
+                  <span style={{ color: 'var(--accent)', fontSize: '15px', fontWeight: 600 }}>
+                    {claimedENS}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>Address</span>
+                  <span className="mono text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    {metamask.address?.slice(0, 10)}...{metamask.address?.slice(-8)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>Chain</span>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                    Sepolia (11155111)
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={handleSignProof}
+                  className="btn btn-primary w-full"
+                >
+                  Sign Ownership Proof
+                </button>
+
+                <button
+                  onClick={() => setFlowStep('claim-ens')}
+                  className="btn btn-secondary w-full text-sm"
+                >
+                  ← Back
+                </button>
+              </div>
+
+              <p style={{ color: 'var(--text-tertiary)', fontSize: '11px', lineHeight: '1.5' }}>
+                You'll sign: "STELLARCAST ENS ownership" + your ENS, address, chain ID, and nonce. 
+                This proves you control both the wallet and ENS.
               </p>
             </div>
-          ) : isAuthenticating ? (
+          )}
+
+          {/* Step 4: Authenticating */}
+          {flowStep === 'authenticating' && (
             <div className="flex flex-col items-center justify-center py-12 space-y-4">
-              <div className="w-10 h-10 rounded-full" style={{
+              <div className="w-12 h-12 rounded-full" style={{
                 border: '3px solid var(--surface)',
                 borderTopColor: 'var(--accent)',
                 animation: 'spin 1s linear infinite'
               }}></div>
               <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                Check MetaMask...
+                Setting up identity...
               </p>
             </div>
-          ) : (
-            <button
-              onClick={metamask.connect}
-              disabled={!metamask.isInstalled || metamask.isConnecting}
-              className="btn btn-primary w-full"
-            >
-              {metamask.isConnecting ? 'Connecting...' : 'Connect MetaMask'}
-            </button>
           )}
         </div>
       </div>
