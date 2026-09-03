@@ -32,19 +32,11 @@ export function generateStealthAddress(
 
   const stealthPrivateKeyScalar = BigInt('0x' + Buffer.from(sharedSecret).toString('hex'));
   
-  const stealthPublicKeyUncompressed = secp256k1.getPublicKey(
-    Buffer.from(sharedSecret.toString(), 'hex').slice(0, 32) as any,
-    false
-  );
-  const spendingUncompressed = secp256k1.getPublicKey(
-    recipientMeta.spendingPublicKey.slice(1) as any,
-    false
-  );
+  const hashPoint = secp256k1.ProjectivePoint.BASE.multiply(stealthPrivateKeyScalar);
+  const spendingPoint = secp256k1.ProjectivePoint.fromHex(recipientMeta.spendingPublicKey);
+  const stealthPoint = spendingPoint.add(hashPoint);
   
-  const stealthPublicKey = secp256k1.getPublicKey(
-    Buffer.from(sharedSecret).slice(0, 32) as any,
-    true
-  );
+  const stealthPublicKey = stealthPoint.toRawBytes(true);
 
   const publicKeyHash = keccak_256(stealthPublicKey.slice(1));
   const stealthAddress = publicKeyHash.slice(-20);
@@ -77,10 +69,11 @@ export function checkStealthAddress(
     return null;
   }
 
-  const stealthPublicKey = secp256k1.getPublicKey(
-    Buffer.from(sharedSecret).slice(0, 32) as any,
-    true
-  );
+  const stealthPrivateKeyScalar = BigInt('0x' + Buffer.from(sharedSecret).toString('hex'));
+  const hashPoint = secp256k1.ProjectivePoint.BASE.multiply(stealthPrivateKeyScalar);
+  const spendingPoint = secp256k1.ProjectivePoint.fromHex(identity.spendingPublicKey);
+  const stealthPoint = spendingPoint.add(hashPoint);
+  const stealthPublicKey = stealthPoint.toRawBytes(true);
 
   const publicKeyHash = keccak_256(stealthPublicKey.slice(1));
   const computedAddress = publicKeyHash.slice(-20);
