@@ -20,6 +20,7 @@ import { NetworkGuard } from '@/components/NetworkGuard';
 import { Browse } from '@/components/Browse';
 import { PaymentSlideOver } from '@/components/PaymentSlideOver';
 import { RecipientScan } from '@/components/RecipientScan';
+import { ensCache, type ENSResult } from '@/lib/ens/resolver';
 
 type ViewState = 'landing' | 'wallet-connect' | 'browse' | 'scan' | 'stream';
 type PaymentStatus = 'idle' | 'pending' | 'confirming' | 'success' | 'error';
@@ -36,8 +37,23 @@ export default function Home() {
   const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
   const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>('new');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [headerEnsResult, setHeaderEnsResult] = useState<ENSResult | null>(null);
   
   const metamask = useMetaMask();
+
+  // Resolve header ENS name
+  useEffect(() => {
+    const resolveHeaderENS = async () => {
+      if (metamask.isConnected && metamask.address && identity) {
+        const result = await ensCache.resolve(metamask.address);
+        setHeaderEnsResult(result);
+      } else {
+        setHeaderEnsResult(null);
+      }
+    };
+
+    resolveHeaderENS();
+  }, [metamask.isConnected, metamask.address, identity]);
 
   // Initialize protocol adapter
   useEffect(() => {
@@ -219,9 +235,33 @@ export default function Home() {
               {metamask.isConnected && (
                 <div className="card px-3 py-2 flex items-center gap-2">
                   <div className="status-dot" style={{ backgroundColor: 'var(--success)' }}></div>
-                  <span className="mono text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {metamask.address?.slice(0, 6)}...{metamask.address?.slice(-4)}
-                  </span>
+                  <div className="flex flex-col min-w-0">
+                    {headerEnsResult ? (
+                      <>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs font-semibold truncate" style={{ color: 'var(--accent)' }}>
+                            {headerEnsResult.name}
+                          </span>
+                          {headerEnsResult.network === 'mainnet' && (
+                            <span className="text-[9px] px-1 rounded" style={{ 
+                              color: 'var(--text-tertiary)', 
+                              backgroundColor: 'var(--elevated)',
+                              fontStyle: 'italic'
+                            }}>
+                              mainnet
+                            </span>
+                          )}
+                        </div>
+                        <span className="mono text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>
+                          {metamask.address?.slice(0, 6)}...{metamask.address?.slice(-4)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="mono text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        {metamask.address?.slice(0, 6)}...{metamask.address?.slice(-4)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

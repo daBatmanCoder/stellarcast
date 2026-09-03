@@ -240,3 +240,16 @@ export async function deleteIdentity(): Promise<void> {
 
   await db.delete('identity', 'primary');
 }
+
+/**
+ * Clear identity for a specific wallet (used for recovery from decrypt errors)
+ */
+export async function clearIdentity(walletAddress: string): Promise<void> {
+  await initDB();
+  if (!db) throw new Error('DB not initialized');
+
+  const record = await db.get('identity', 'primary');
+  if (record && record.walletAddress.toLowerCase() === walletAddress.toLowerCase()) {
+    await db.delete('identity', 'primary');
+  }
+}

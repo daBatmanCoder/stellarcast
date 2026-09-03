@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import type { ProtocolAdapter } from '@/lib/protocol/adapters';
-import { ensCache, displayName } from '@/lib/ens/resolver';
+import { ensCache, displayName, type ENSResult } from '@/lib/ens/resolver';
 
 interface BrowseProps {
   adapter: ProtocolAdapter | null;
@@ -13,7 +13,7 @@ interface Event {
   id: string;
   title: string;
   hostAddress: string;
-  hostName?: string | null;
+  hostEns?: ENSResult | null;
   price: string;
   isLive: boolean;
   imageUrl?: string;
@@ -47,11 +47,11 @@ export function Browse({ adapter, onSelectEvent }: BrowseProps) {
   useEffect(() => {
     const resolveENS = async () => {
       for (const event of events) {
-        if (!event.hostName) {
-          const ensName = await ensCache.resolve(event.hostAddress);
-          if (ensName) {
+        if (!event.hostEns) {
+          const ensResult = await ensCache.resolve(event.hostAddress);
+          if (ensResult) {
             setEvents(prev => prev.map(e => 
-              e.id === event.id ? { ...e, hostName: ensName } : e
+              e.id === event.id ? { ...e, hostEns: ensResult } : e
             ));
           }
         }
@@ -138,7 +138,7 @@ export function Browse({ adapter, onSelectEvent }: BrowseProps) {
                   className="mono truncate"
                   style={{ color: 'var(--text-secondary)' }}
                 >
-                  {displayName(event.hostAddress, event.hostName)}
+                  {displayName(event.hostAddress, event.hostEns)}
                 </span>
                 <span 
                   className="mono font-semibold"

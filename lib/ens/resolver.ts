@@ -1,15 +1,20 @@
 /**
- * Sepolia ENS Resolver
- * Resolves ENS names on Sepolia testnet (chain ID 11155111) using viem
+ * Sepolia + Mainnet ENS Resolver
+ * Resolves ENS names on both Sepolia testnet and mainnet using viem
  */
 
 import { createPublicClient, http } from 'viem';
-import { sepolia } from 'viem/chains';
+import { sepolia, mainnet } from 'viem/chains';
 
-// Create a public client for Sepolia ENS resolution
+// Create public clients with reliable RPCs
 const sepoliaClient = createPublicClient({
   chain: sepolia,
-  transport: http()
+  transport: http('https://ethereum-sepolia-rpc.publicnode.com')
+});
+
+const mainnetClient = createPublicClient({
+  chain: mainnet,
+  transport: http('https://ethereum-rpc.publicnode.com')
 });
 
 /**
@@ -47,6 +52,29 @@ export async function resolveSepoliaENS(name: string): Promise<string | null> {
 }
 
 /**
+ * Resolve ENS name to Ethereum address on mainnet
+ */
+export async function resolveMainnetENS(name: string): Promise<string | null> {
+  if (!name || !name.includes('.eth')) {
+    return null;
+  }
+
+  try {
+    const normalized = normalizeEnsName(name);
+    
+    // Use viem's built-in ENS resolution for mainnet
+    const address = await mainnetClient.getEnsAddress({
+      name: normalized
+    });
+
+    return address || null;
+  } catch (error) {
+    console.error('Failed to resolve mainnet ENS:', error);
+    return null;
+  }
+}
+
+/**
  * Reverse resolve: given an address, find its primary ENS name on Sepolia
  */
 export async function reverseResolveSepoliaENS(address: string): Promise<string | null> {
@@ -68,11 +96,91 @@ export async function reverseResolveSepoliaENS(address: string): Promise<string 
 }
 
 /**
+ * Reverse resolve: given an address, find its primary ENS name on mainnet
+ */
+export async function reverseResolveMainnetENS(address: string): Promise<string | null> {
+  if (!address || !address.startsWith('0x')) {
+    return null;
+  }
+
+  try {
+    // Use viem's built-in reverse ENS resolution for mainnet
+    const ensName = await mainnetClient.getEnsName({
+      address: address as `0x${string}`
+    });
+
+    return ensName || null;
+  } catch (error) {
+    console.error('Failed to reverse resolve mainnet ENS:', error);
+    return null;
+  }
+}
+
+/**
+ * ENS resolution result with network source
+ */
+export interface ENSResult {
+  name: string;
+  network: 'sepolia' | 'mainnet';
+}
+
+/**
+ * Resolve ENS for an address, checking Sepolia first, then mainnet
+ * Returns the ENS name and which network it's from
+ */
+export async function resolveENSWithNetwork(address: string): Promise<ENSResult | null> {
+  if (!address || !address.startsWith('0x')) {
+    return null;
+  }
+
+  // Try Sepolia first (preferred for product)
+  const sepoliaName = await reverseResolveSepoliaENS(address);
+  if (sepoliaName) {
+    return { name: sepoliaName, network: 'sepolia' };
+  }
+
+  // Fallback to mainnet
+  const mainnetName = await reverseResolveMainnetENS(address);
+  if (mainnetName) {
+    return { name: mainnetName, network: 'mainnet' };
+  }
+
+  return null;
+}
+
+/**
+ * Forward resolve ENS name, checking if it matches the connected address
+ * Checks both Sepolia and mainnet
+ */
+export async function forwardResolveENSWithNetwork(
+  name: string,
+  connectedAddress?: string
+): Promise<{ address: string; network: 'sepolia' | 'mainnet' } | null> {
+  if (!name || !name.includes('.eth')) {
+    return null;
+  }
+
+  // Try Sepolia first
+  const sepoliaAddress = await resolveSepoliaENS(name);
+  if (sepoliaAddress) {
+    return { address: sepoliaAddress, network: 'sepolia' };
+  }
+
+  // Fallback to mainnet
+  const mainnetAddress = await resolveMainnetENS(name);
+  if (mainnetAddress) {
+    return { address: mainnetAddress, network: 'mainnet' };
+  }
+
+  return null;
+}
+
+/**
  * Display name: ENS name if available, otherwise truncated address
  */
-export function displayName(address: string, ensName?: string | null): string {
-  if (ensName && ensName.endsWith('.eth')) {
-    return ensName;
+export function displayName(address: string, ensResult?: ENSResult | null): string {
+  if (ensResult && ensResult.name.endsWith('.eth')) {
+    return ensResult.name;
   }
   if (!address || !address.startsWith('0x')) {
     return 'Unknown';
@@ -84,10 +192,10 @@ export function displayName(address: string, ensName?: string | null): string {
  * Hook to resolve and cache ENS names for addresses
  */
 export class ENSCache {
-  private cache = new Map<string, string | null>();
-  private pending = new Map<string, Promise<string | null>>();
+  private cache = new Map<string, ENSResult | null>();
+  private pending = new Map<string, Promise<ENSResult | null>>();
 
-  async resolve(address: string): Promise<string | null> {
+  async resolve(address: string): Promise<ENSResult | null> {
     // Check cache first
     if (this.cache.has(address)) {
       return this.cache.get(address) || null;
@@ -99,7 +207,7 @@ export class ENSCache {
     }
 
     // Start new resolution
-    const promise = reverseResolveSepoliaENS(address);
+    const promise = resolveENSWithNetwork(address);
     this.pending.set(address, promise);
 
     try {
