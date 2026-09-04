@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 interface ModalShellProps {
@@ -19,6 +19,12 @@ export function ModalShell({
   mobileBottomSheet = false 
 }: ModalShellProps) {
   const modalRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  // Handle client-side mounting
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -38,7 +44,8 @@ export function ModalShell({
     };
   }, [isOpen, allowOverlayClose, onClose]);
 
-  if (!isOpen) return null;
+  // Don't render until mounted client-side
+  if (!mounted || !isOpen) return null;
 
   const handleOverlayClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget && allowOverlayClose && onClose) {
@@ -52,14 +59,16 @@ export function ModalShell({
       <div
         style={{
           position: 'fixed',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          left: 0,
+          top: '0px',
+          right: '0px',
+          bottom: '0px',
+          left: '0px',
+          width: '100vw',
+          height: '100vh',
           backgroundColor: 'rgba(0, 0, 0, 0.72)',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
-          zIndex: 1000,
+          zIndex: 9998,
           animation: 'modal-overlay-fade 160ms ease-out forwards'
         }}
       />
@@ -69,16 +78,19 @@ export function ModalShell({
         onClick={handleOverlayClick}
         style={{
           position: 'fixed',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          left: 0,
+          top: '0px',
+          right: '0px',
+          bottom: '0px',
+          left: '0px',
+          width: '100vw',
+          height: '100vh',
           display: 'flex',
           alignItems: mobileBottomSheet ? 'flex-end' : 'center',
           justifyContent: 'center',
-          padding: mobileBottomSheet ? '0' : '16px',
-          zIndex: 1010,
-          overflowY: 'auto'
+          padding: mobileBottomSheet ? '0px' : '16px',
+          zIndex: 9999,
+          overflowY: 'auto',
+          pointerEvents: 'auto'
         }}
       >
         {/* Card */}
@@ -88,14 +100,17 @@ export function ModalShell({
           aria-modal="true"
           style={{
             position: 'relative',
-            width: mobileBottomSheet ? '100%' : 'min(400px, calc(100vw - 32px))',
-            maxWidth: mobileBottomSheet ? '100%' : '400px',
+            width: mobileBottomSheet ? '100%' : 'min(420px, calc(100vw - 32px))',
+            maxWidth: mobileBottomSheet ? '100%' : '480px',
+            minWidth: '320px',
             borderRadius: mobileBottomSheet ? '20px 20px 0 0' : '24px',
             backgroundColor: '#16161D',
             border: '1px solid rgba(255, 255, 255, 0.08)',
             boxShadow: '0 24px 48px rgba(0, 0, 0, 0.48)',
             animation: 'modal-card-enter 200ms ease-out forwards',
-            paddingBottom: mobileBottomSheet ? 'env(safe-area-inset-bottom, 0px)' : '0'
+            paddingBottom: mobileBottomSheet ? 'env(safe-area-inset-bottom, 0px)' : '0',
+            margin: '0 auto',
+            pointerEvents: 'auto'
           }}
         >
           {children}
