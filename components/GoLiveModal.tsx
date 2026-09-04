@@ -39,7 +39,6 @@ export function GoLiveModal({
   const [category, setCategory] = useState('Science & Technology');
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
-  const [ensVerified, setEnsVerified] = useState(false);
   const [ensInput, setEnsInput] = useState(ensName);
   const [activeEns, setActiveEns] = useState(ensName);
   const [stealthMetaAddress, setStealthMetaAddress] = useState(metaAddress);
@@ -49,9 +48,8 @@ export function GoLiveModal({
     setEnsInput(ensName);
     setActiveEns(ensName);
     setStealthMetaAddress(metaAddress);
-    setStep(ensName ? 'ens-verify' : 'ens-verify');
+    setStep('ens-verify');
     setError('');
-    setEnsVerified(false);
   }, [isOpen, ensName, metaAddress]);
 
   const categories = [
@@ -102,7 +100,6 @@ export function GoLiveModal({
       }
 
       setActiveEns(name);
-      setEnsVerified(true);
       await onEnsVerified?.(name, signature, message);
       setStep('stealth-setup');
     } catch (err) {
@@ -220,11 +217,26 @@ export function GoLiveModal({
               <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-primary)', marginBottom: '8px' }}>
                 Your ENS Name
               </p>
-              <p style={{ fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px' }}>
-                {ensName}
-              </p>
+              <input
+                type="text"
+                value={ensInput}
+                onChange={(e) => setEnsInput(e.target.value)}
+                placeholder="you.eth"
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--bg-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-primary)',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  outline: 'none',
+                  marginBottom: '8px'
+                }}
+              />
               <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.48)', fontFamily: 'monospace' }}>
-                {walletAddress}
+                {walletAddress || 'Connect wallet first'}
               </p>
             </div>
 
@@ -239,7 +251,7 @@ export function GoLiveModal({
                 We'll verify you own this ENS by:
               </p>
               <ul style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.64)', marginLeft: '20px', marginTop: '8px' }}>
-                <li>Resolving {ensName} on Sepolia</li>
+                <li>Resolving your ENS on Sepolia</li>
                 <li>Confirming it points to your wallet</li>
                 <li>Requesting signature proof (personal_sign)</li>
               </ul>
@@ -271,7 +283,7 @@ export function GoLiveModal({
               marginBottom: '16px'
             }}>
               <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--success)', marginBottom: '8px' }}>
-                ✓ ENS Verified: {ensName}
+                ✓ ENS Verified: {activeEns}
               </p>
               <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)' }}>
                 Ownership confirmed on Sepolia
@@ -395,7 +407,7 @@ export function GoLiveModal({
               </p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                 <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent)' }}>
-                  {ensName}
+                  {activeEns}
                 </span>
                 <span style={{ fontSize: '12px', color: 'var(--success)' }}>✓</span>
               </div>
