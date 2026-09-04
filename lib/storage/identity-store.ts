@@ -253,3 +253,41 @@ export async function clearIdentity(walletAddress: string): Promise<void> {
     await db.delete('identity', 'primary');
   }
 }
+
+let sessionWrapKey: Uint8Array | null = null;
+
+export function setSessionWrapKey(key: Uint8Array): void {
+  sessionWrapKey = key;
+}
+
+export function getSessionWrapKey(): Uint8Array | null {
+  return sessionWrapKey;
+}
+
+export function clearSessionWrapKey(): void {
+  sessionWrapKey = null;
+}
+
+/**
+ * Overwrite the stored stealth identity for this wallet, keeping the wrap-key nonce.
+ */
+export async function replaceStoredIdentity(
+  identity: StealthIdentity,
+  walletAddress: string
+): Promise<void> {
+  const wrapKey = getSessionWrapKey();
+  if (!wrapKey) {
+    throw new Error('Session encryption key missing. Connect and sign again, then retry import.');
+  }
+  const auth = await getAuthInfo();
+  if (!auth || auth.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+    throw new Error('No stored identity for this wallet. Connect and sign first.');
+  }
+  await storeIdentity(
+    identity,
+    walletAddress,
+    wrapKey,
+    auth.authNonce,
+    auth.authTimestamp
+  );
+}

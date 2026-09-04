@@ -224,7 +224,7 @@ export class LiveProtocolAdapter implements ProtocolAdapter {
       stealthAddress: event.stealthAddress,
       ephemeralPublicKey: event.ephemeralPublicKey,
       metadata: event.metadata,
-      viewTag: 0,
+      viewTag: event.viewTag,
       txHash: event.txHash,
       timestamp: Date.now(),
     }));

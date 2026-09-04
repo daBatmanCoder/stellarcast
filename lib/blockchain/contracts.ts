@@ -5,11 +5,15 @@
 import {
   encodeFunctionData,
   decodeFunctionResult,
+  decodeEventLog,
   parseAbi,
+  parseAbiItem,
   type Hex,
 } from 'viem';
 import { callContract, sendContractTransaction, getLogs, verifyContractDeployed } from './transactions';
 import { StealthMetaAddress } from '../types/stealth';
+import { encodeMetaAddress, tryDecodeMetaAddress } from '../crypto/identity';
+import { parseViewTagFromMetadata } from '../crypto/stealth';
 
 /**
  * Known ERC-6538 registry and ERC-5564 announcer contract addresses per chain
@@ -41,7 +45,13 @@ const REGISTRY_ABI = parseAbi([
   'function stealthMetaAddressOf(address registrant, uint256 schemeId) view returns (bytes)',
 ]);
 
-const ANNOUNCE_SELECTOR = '0x4f0e0ef3';
+const ANNOUNCER_ABI = parseAbi([
+  'function announce(uint256 schemeId, address stealthAddress, bytes ephemeralPubKey, bytes metadata)',
+]);
+
+const ANNOUNCEMENT_EVENT = parseAbiItem(
+  'event Announcement(uint256 indexed schemeId, address indexed stealthAddress, address indexed caller, bytes ephemeralPubKey, bytes metadata)'
+);
 
 /** Scheme 1 meta-address bytes = compressed spend pubkey (33) || compressed view pubkey (33) */
 export function metaAddressToBytes(meta: StealthMetaAddress): Hex {
@@ -76,39 +86,11 @@ export function bytesToMetaAddress(hex: string): StealthMetaAddress | null {
  * Example: st:eth:0x0341ce6167...633
  */
 export function parseStealthMetaAddressFromENS(textRecord: string): StealthMetaAddress | null {
-  if (!textRecord || !textRecord.startsWith('st:eth:0x')) {
-    return null;
-  }
-
-  try {
-    // Remove 'st:eth:0x' prefix
-    const hexData = textRecord.slice(9);
-    
-    // Should be 132 hex chars (33 bytes spending + 33 bytes viewing, each as compressed pubkey)
-    if (hexData.length !== 132) {
-      console.error('Invalid stealth meta-address length:', hexData.length);
-      return null;
-    }
-
-    return {
-      spendingPublicKey: Buffer.from(hexData.slice(0, 66), 'hex'),
-      viewingPublicKey: Buffer.from(hexData.slice(66, 132), 'hex'),
-      scheme: 1,
-    };
-  } catch (error) {
-    console.error('Failed to parse stealth meta-address from ENS:', error);
-    return null;
-  }
+  return tryDecodeMetaAddress(textRecord);
 }
 
-/**
- * Encode stealth meta-address to ENS text record format
- * Format: st:eth:0x<spending pubkey hex><viewing pubkey hex>
- */
 export function encodeStealthMetaAddressForENS(meta: StealthMetaAddress): string {
-  const spend = Buffer.from(meta.spendingPublicKey).toString('hex');
-  const view = Buffer.from(meta.viewingPublicKey).toString('hex');
-  return `st:eth:0x${spend}${view}`;
+  return encodeMetaAddress(meta);
 }
 
 export function publicKeysMatch(a: StealthMetaAddress, b: StealthMetaAddress): boolean {
@@ -203,40 +185,19 @@ export async function publishAnnouncement(
   ephemeralPublicKey: string,
   metadata: string
 ): Promise<string> {
-  try {
-    const schemeParam = schemeId.toString(16).padStart(64, '0');
-    const addressParam = stealthAddress.toLowerCase().slice(2).padStart(64, '0');
-
-    const ephemBytes = ephemeralPublicKey.slice(2);
-    const metaBytes = metadata.slice(2);
-
-    const offset1 = (4 * 32).toString(16).padStart(64, '0');
-    const offset2 = ((4 + 1 + Math.ceil(ephemBytes.length / 2 / 32)) * 32).toString(16).padStart(64, '0');
-
-    const ephemLength = (ephemBytes.length / 2).toString(16).padStart(64, '0');
-    const ephemData = ephemBytes.padEnd(Math.ceil(ephemBytes.length / 64) * 64, '0');
-
-    const metaLength = (metaBytes.length / 2).toString(16).padStart(64, '0');
-    const metaData = metaBytes.padEnd(Math.ceil(metaBytes.length / 64) * 64, '0');
-
-    const data =
-      ANNOUNCE_SELECTOR +
-      schemeParam +
-      addressParam +
-      offset1 +
-      offset2 +
-      ephemLength +
-      ephemData +
-      metaLength +
-      metaData;
-
-    return await sendContractTransaction(from, announcerAddress, data);
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error('Failed to publish announcement');
-  }
+  const ephem = ephemeralPublicKey.startsWith('0x') ? ephemeralPublicKey : `0x${ephemeralPublicKey}`;
+  const meta = metadata.startsWith('0x') ? metadata : `0x${metadata}`;
+  const data = encodeFunctionData({
+    abi: ANNOUNCER_ABI,
+    functionName: 'announce',
+    args: [
+      schemeId,
+      stealthAddress as `0x${string}`,
+      ephem as Hex,
+      meta as Hex,
+    ],
+  });
+  return await sendContractTransaction(from, announcerAddress, data);
 }
 
 export async function scanAnnouncements(
@@ -248,6 +209,7 @@ export async function scanAnnouncements(
     stealthAddress: string;
     ephemeralPublicKey: string;
     metadata: string;
+    viewTag: number;
     txHash: string;
     blockNumber: string;
   }>
@@ -256,14 +218,38 @@ export async function scanAnnouncements(
     const fromBlockHex = '0x' + fromBlock.toString(16);
     const logs = await getLogs(announcerAddress, fromBlockHex, 'latest');
 
-    return logs.map((log: any) => ({
-      schemeId: log.topics[1],
-      stealthAddress: '0x' + log.topics[2].slice(-40),
-      ephemeralPublicKey: log.data.slice(0, 68),
-      metadata: log.data.slice(68),
-      txHash: log.transactionHash,
-      blockNumber: log.blockNumber,
-    }));
+    return logs.flatMap((log: any) => {
+      try {
+        const decoded = decodeEventLog({
+          abi: [ANNOUNCEMENT_EVENT],
+          data: log.data as Hex,
+          topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
+        }) as {
+          eventName: string;
+          args: {
+            schemeId: bigint;
+            stealthAddress: string;
+            ephemeralPubKey: Hex;
+            metadata: Hex;
+          };
+        };
+        if (decoded.eventName !== 'Announcement') return [];
+        const args = decoded.args;
+        return [
+          {
+            schemeId: args.schemeId.toString(),
+            stealthAddress: args.stealthAddress,
+            ephemeralPublicKey: args.ephemeralPubKey,
+            metadata: args.metadata,
+            viewTag: parseViewTagFromMetadata(args.metadata),
+            txHash: log.transactionHash as string,
+            blockNumber: log.blockNumber as string,
+          },
+        ];
+      } catch {
+        return [];
+      }
+    });
   } catch (error) {
     console.error('Failed to scan announcements:', error);
     return [];

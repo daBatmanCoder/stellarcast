@@ -3,8 +3,8 @@
  * Mint room NFTs on Go Live, read room list for Browse
  */
 
-import { encodeFunctionData, decodeFunctionResult, parseAbi, type Hex } from 'viem';
-import { callContract, sendContractTransaction } from './transactions';
+import { encodeFunctionData, decodeFunctionResult, decodeEventLog, parseAbi, parseAbiItem, type Hex } from 'viem';
+import { callContract, sendContractTransaction, waitForTransactionReceipt } from './transactions';
 import type { LiveRoom } from '@/lib/storage/rooms-store';
 
 /**
@@ -29,6 +29,10 @@ const ROOMS_ABI = parseAbi([
   'function getTotalRooms() view returns (uint256)',
   'function roomExists(uint256 tokenId) view returns (bool)',
 ]);
+
+const ROOM_CREATED_EVENT = parseAbiItem(
+  'event RoomCreated(uint256 indexed tokenId, address indexed host, string hostEns, string title, string category, string stealthMetaAddress, uint256 entryPrice, uint256 createdAt)'
+);
 
 export interface CreateRoomParams {
   hostEns: string;
@@ -74,9 +78,35 @@ export async function createRoomOnChain(
   });
 
   const txHash = await sendContractTransaction(fromAddress, ROOM_CONTRACT_ADDRESS, data);
-  
-  // TODO: Parse transaction receipt to extract tokenId from RoomCreated event
-  return { txHash };
+  const receipt = await waitForTransactionReceipt(txHash);
+  const tokenId = parseRoomCreatedTokenId(receipt.logs);
+
+  return { txHash, tokenId };
+}
+
+function parseRoomCreatedTokenId(
+  logs?: Array<{ address: string; topics: string[]; data: string }>
+): number | undefined {
+  if (!logs?.length) return undefined;
+
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== ROOM_CONTRACT_ADDRESS.toLowerCase()) continue;
+    try {
+      const decoded = decodeEventLog({
+        abi: [ROOM_CREATED_EVENT],
+        data: log.data as Hex,
+        topics: log.topics as [`0x${string}`, ...`0x${string}`[]],
+      }) as { eventName: string; args: { tokenId: bigint } };
+      if (decoded.eventName === 'RoomCreated') {
+        return Number(decoded.args.tokenId);
+      }
+    } catch {
+      if (log.topics[1]) {
+        return Number(BigInt(log.topics[1]));
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -194,6 +224,9 @@ export async function getEncryptedAccessData(tokenId: number): Promise<string | 
  */
 export async function getAllRoomIds(): Promise<number[]> {
   try {
+    if (typeof window === 'undefined' || !window.ethereum) {
+      return [];
+    }
     const data = encodeFunctionData({
       abi: ROOMS_ABI,
       functionName: 'getAllRoomIds',
@@ -222,6 +255,9 @@ export async function getAllRoomIds(): Promise<number[]> {
  */
 export async function getAllRooms(): Promise<LiveRoom[]> {
   try {
+    if (typeof window === 'undefined' || !window.ethereum) {
+      return [];
+    }
     const roomIds = await getAllRoomIds();
     if (roomIds.length === 0) return [];
 

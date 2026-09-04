@@ -37,9 +37,9 @@ export function ViewStealthAddressModal({
     receivingStatus === 'ready'
       ? 'Registered for receiving'
       : receivingStatus === 'needs-setup'
-        ? 'Local keys only — not registered yet'
+        ? 'Local keys only — not published to ENS yet'
         : receivingStatus === 'keys-mismatch'
-          ? 'Local keys do not match on-chain registration'
+          ? 'Local keys do not match stealth-meta-address[1]'
           : receivingStatus === 'checking'
             ? 'Checking registration…'
             : 'Not ready';

@@ -220,13 +220,13 @@ export function PaymentModal({
               </div>
               <div style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.64)' }}>
                 <div style={{ marginBottom: '6px' }}>
-                  Your payment goes to a <strong style={{ color: 'rgba(255, 255, 255, 0.88)' }}>one-time stealth address</strong> — not the streamer's ENS address.
+                Your payment goes to a <strong style={{ color: 'rgba(255, 255, 255, 0.88)' }}>one-time stealth address</strong> derived from the host’s ENS <code>stealth-meta-address[1]</code> — not their public wallet.
                 </div>
                 <div style={{ marginBottom: '6px' }}>
                   On-chain, it looks like a payment to a random address. Nobody can link your payment to the streamer's identity.
                 </div>
                 <div>
-                  Only the host can detect & claim the payment using their stealth keys (ERC-5564).
+                Only the host can detect the payment using their viewing key (ERC-5564).
                 </div>
               </div>
             </div>
@@ -238,7 +238,7 @@ export function PaymentModal({
               border: '1px solid rgba(0, 245, 147, 0.16)'
             }}>
               <div style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.64)' }}>
-                ✓ Room password delivered to your Inbox<br />
+                ✓ Access ticket stored in your Inbox after the ERC-5564 announcement + payment<br />
                 ✓ Private, non-custodial, no middleman
               </div>
             </div>

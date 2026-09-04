@@ -50,8 +50,8 @@ export function StealthSetupModal({
   }, [isOpen, initialStatus]);
 
   const handleRegister = async () => {
-    if (!identity || !walletAddress) {
-      setError('Connect your wallet and unlock a stealth identity first.');
+    if (!identity || !walletAddress || !ensName) {
+      setError('Connect your wallet and verify ENS in Go Live first.');
       setPhase('error');
       return;
     }
@@ -60,7 +60,7 @@ export function StealthSetupModal({
     setError('');
 
     try {
-      const result = await registerReceivingMetaAddress(walletAddress, identity, { ensName });
+      const result = await registerReceivingMetaAddress(walletAddress, identity, { ensName, targetSlot: 1 });
       setTxHash(result.txHash);
       setPhase('success');
       onRegistered(result.metaEncoded, result.slot);
@@ -111,7 +111,7 @@ export function StealthSetupModal({
         <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0, lineHeight: 1.45 }}>
           {phase === 'success'
             ? 'Viewers can now pay a one-time stealth address derived from your registered meta-address.'
-            : 'To accept private stream payments, register a stealth meta-address for this wallet.'}
+            : 'To accept private stream payments, publish stealth-meta-address[1] on your ENS.'}
         </p>
       </div>
 
@@ -132,8 +132,8 @@ export function StealthSetupModal({
             >
               {statusMessage ||
                 (initialStatus === 'keys-mismatch'
-                  ? 'On-chain keys exist but do not match this browser. Registering will publish this device’s meta-address.'
-                  : 'We’ll use your local stealth keys and publish the public meta-address to the ERC-6538 registry on Sepolia.')}
+                  ? 'This ENS already has stealth keys. Import matching private keys in Go Live, or overwrite [1] if you lost them.'
+                  : 'We’ll publish your local spend/view public keys to stealth-meta-address[1] on Sepolia ENS.')}
             </div>
 
             <div
@@ -174,8 +174,8 @@ export function StealthSetupModal({
             >
               <strong style={{ color: 'var(--text-primary)' }}>What happens</strong>
               <ol style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-                <li>Confirm a registry transaction in MetaMask</li>
-                <li>Your public spend/view keys are stored on-chain</li>
+                <li>Confirm an ENS setText transaction in MetaMask</li>
+                <li>stealth-meta-address[1] stores your public spend/view keys</li>
                 <li>Viewers generate one-time stealth payment addresses from them</li>
               </ol>
               {adapterMode === 'mock' && (

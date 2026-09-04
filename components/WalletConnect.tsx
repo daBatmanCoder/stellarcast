@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useMetaMask } from '@/lib/wallet/useMetaMask';
 import { toChecksumAddress, authenticateWithWallet, reauthenticateWithWallet } from '@/lib/wallet/wallet-auth';
 import { generateStealthIdentity, identityToMetaAddress, encodeMetaAddress } from '@/lib/crypto/identity';
-import { storeIdentity, loadIdentity, getAuthInfo, clearIdentity } from '@/lib/storage/identity-store';
+import { storeIdentity, loadIdentity, getAuthInfo, clearIdentity, setSessionWrapKey } from '@/lib/storage/identity-store';
 import type { StealthIdentity } from '@/lib/types/stealth';
 import { ModalShell } from './ModalShell';
 
@@ -99,6 +99,7 @@ export function WalletConnect({ onIdentityReady, onDismiss }: WalletConnectProps
             throw new Error('DECRYPT_FAILED');
           }
           
+          setSessionWrapKey(encryptionKey);
           const meta = identityToMetaAddress(userIdentity);
           const metaAddress = encodeMetaAddress(meta);
           onIdentityReady(userIdentity, metaAddress);
@@ -122,6 +123,7 @@ export function WalletConnect({ onIdentityReady, onDismiss }: WalletConnectProps
         new Date().toISOString()
       );
       
+      setSessionWrapKey(encryptionKey);
       const meta = identityToMetaAddress(userIdentity);
       const metaAddress = encodeMetaAddress(meta);
       onIdentityReady(userIdentity, metaAddress);

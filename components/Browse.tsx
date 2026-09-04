@@ -92,7 +92,7 @@ export function Browse({ adapter, onSelectEvent }: BrowseProps) {
             </p>
           </div>
           <p style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>
-            Events will be queryable from ERC-6538 registry and ERC-5564 announcements on Sepolia
+            Events will be queryable from ENS stealth-meta-address records and ERC-5564 announcements on Sepolia
           </p>
         </div>
       </div>

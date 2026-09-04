@@ -20,6 +20,11 @@ export interface TransactionReceipt {
   to: string;
   status: string;
   gasUsed: string;
+  logs?: Array<{
+    address: string;
+    topics: string[];
+    data: string;
+  }>;
 }
 
 /**
