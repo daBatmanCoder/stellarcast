@@ -137,7 +137,13 @@ export function RoomView({
       // Demo: local preview ready without signaling server
       setConnectionState('connected');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to initialize stream');
+      const message = err instanceof Error ? err.message : 'Failed to initialize stream';
+      if (isHost) {
+        setError(message);
+        setConnectionState('disconnected');
+        return;
+      }
+      setError(message);
       setConnectionState('failed');
     }
   };
@@ -370,7 +376,7 @@ export function RoomView({
               </div>
             )}
 
-            {error && (
+            {error && !isHost && (
               <div
                 style={{
                   position: 'absolute',
@@ -391,6 +397,18 @@ export function RoomView({
                   <Button variant="secondary" size="sm" onClick={handleLeave}>
                     Leave room
                   </Button>
+                </div>
+              </div>
+            )}
+            {error && isHost && !localStream && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center', padding: 24, maxWidth: 360 }}>
+                  <p style={{ color: 'var(--text-primary)', fontSize: 16, fontWeight: 600, margin: 0 }}>
+                    Camera blocked
+                  </p>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '8px 0 0', lineHeight: 1.4 }}>
+                    {error}. The room is still live. Allow camera for this site, or keep the host dashboard open.
+                  </p>
                 </div>
               </div>
             )}

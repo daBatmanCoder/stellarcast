@@ -663,7 +663,7 @@ export default function Home() {
           }
           emptyTitle={roomsLoading ? 'Loading rooms...' : 'No live rooms yet'}
           emptyDescription={roomsLoading ? 'Fetching rooms from Sepolia...' : 'Be the first to Go Live and create a room!'}
-          onClearFilters={clearFilters}
+          onClearFilters={searchQuery || categoryFilter ? clearFilters : undefined}
         />
 
         {showFeatured && (
