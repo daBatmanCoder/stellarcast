@@ -221,7 +221,9 @@ export default function Home() {
       viewers: 1,
       tags: [category, 'Live'],
       isFeatured: false,
-      isDemoSeed: false
+      isDemoSeed: false,
+      thumbnail: '',
+      isLive: true
     };
     
     setGoLiveModalOpen(false);
