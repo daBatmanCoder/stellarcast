@@ -20,6 +20,7 @@ export interface LiveRoom {
   isLive: boolean;
   isFeatured?: boolean;
   createdAt: number; // timestamp in ms
+  createdBlock?: number; // Sepolia block when the room was minted
   stealthMetaAddress?: string; // host's stealth meta for payments
 }
 

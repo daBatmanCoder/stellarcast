@@ -27,7 +27,6 @@ interface AppShellProps {
   onGoLive: () => void;
   onInboxToggle: () => void;
   onBrowse?: () => void;
-  onSetupReceiving?: () => void;
   onViewStealthAddress?: () => void;
   onSwitchAccount?: () => void;
   onDisconnect?: () => void;
@@ -54,7 +53,6 @@ export function AppShell({
   onGoLive,
   onInboxToggle,
   onBrowse,
-  onSetupReceiving,
   onViewStealthAddress,
   onSwitchAccount,
   onDisconnect,
@@ -76,7 +74,6 @@ export function AppShell({
         onGoLive={onGoLive}
         onInboxToggle={onInboxToggle}
         onBrowse={onBrowse}
-        onSetupReceiving={onSetupReceiving}
         onViewStealthAddress={onViewStealthAddress}
         onSwitchAccount={onSwitchAccount}
         onDisconnect={onDisconnect}

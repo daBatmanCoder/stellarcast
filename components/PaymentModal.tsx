@@ -18,6 +18,9 @@ interface PaymentModalProps {
   isOpen: boolean;
   room: LiveRoom | null;
   ensName?: string;
+  isWalletConnected?: boolean;
+  isConnecting?: boolean;
+  onConnectWallet?: () => Promise<boolean>;
   onClose: () => void;
   onSuccess: (txHash: string, sharedSecret: Uint8Array) => void;
   onPay: () => Promise<{ txHash: string; sharedSecret: Uint8Array }>;
@@ -27,6 +30,9 @@ export function PaymentModal({
   isOpen,
   room,
   ensName,
+  isWalletConnected = true,
+  isConnecting = false,
+  onConnectWallet,
   onClose,
   onSuccess,
   onPay
@@ -403,7 +409,14 @@ export function PaymentModal({
               Cancel
             </button>
             <button
-              onClick={handlePay}
+              onClick={() => {
+                if (!isWalletConnected) {
+                  void onConnectWallet?.();
+                  return;
+                }
+                void handlePay();
+              }}
+              disabled={isConnecting}
               style={{
                 flex: 1,
                 height: '48px',
@@ -413,7 +426,8 @@ export function PaymentModal({
                 color: 'white',
                 fontSize: '15px',
                 fontWeight: 600,
-                cursor: 'pointer',
+                cursor: isConnecting ? 'not-allowed' : 'pointer',
+                opacity: isConnecting ? 0.6 : 1,
                 transition: 'all 150ms ease'
               }}
               onMouseEnter={(e) => {
@@ -425,7 +439,9 @@ export function PaymentModal({
                 e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
-              Pay 0.001 ETH
+              {!isWalletConnected
+                ? isConnecting ? 'Connecting…' : 'Connect wallet'
+                : 'Pay 0.001 ETH'}
             </button>
           </div>
         </div>

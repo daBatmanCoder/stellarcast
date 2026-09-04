@@ -143,6 +143,36 @@ export async function sendContractTransaction(
   }
 }
 
+export const SEPOLIA_PUBLIC_RPC = 'https://ethereum-sepolia-rpc.publicnode.com';
+
+async function publicRpc(method: string, params: unknown[]): Promise<unknown> {
+  const response = await fetch(SEPOLIA_PUBLIC_RPC, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method,
+      params,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Sepolia RPC ${response.status}`);
+  }
+
+  const json = (await response.json()) as {
+    result?: unknown;
+    error?: { message?: string };
+  };
+
+  if (json.error) {
+    throw new Error(json.error.message || 'Sepolia RPC error');
+  }
+
+  return json.result;
+}
+
 /**
  * Call contract read method (eth_call)
  */
@@ -151,24 +181,16 @@ export async function callContract(
   data: string,
   from?: string
 ): Promise<string> {
-  if (typeof window === 'undefined' || !window.ethereum) {
-    throw new Error('MetaMask not available');
-  }
-
   try {
-    const result = await window.ethereum.request({
-      method: 'eth_call',
-      params: [
-        {
-          to: contractAddress,
-          data,
-          from,
-        },
-        'latest',
-      ],
-    }) as string;
-
-    return result;
+    const result = await publicRpc('eth_call', [
+      {
+        to: contractAddress,
+        data,
+        from,
+      },
+      'latest',
+    ]);
+    return result as string;
   } catch (error: unknown) {
     const callError = error as { message: string };
     throw new Error(`Contract call failed: ${callError.message}`);
@@ -179,21 +201,29 @@ export async function callContract(
  * Get contract bytecode
  */
 export async function getContractCode(address: string): Promise<string> {
-  if (typeof window === 'undefined' || !window.ethereum) {
-    throw new Error('MetaMask not available');
-  }
-
   try {
-    const code = await window.ethereum.request({
-      method: 'eth_getCode',
-      params: [address, 'latest'],
-    }) as string;
-
-    return code;
+    const code = await publicRpc('eth_getCode', [address, 'latest']);
+    return code as string;
   } catch (error: unknown) {
     const codeError = error as { message: string };
     throw new Error(`Failed to get contract code: ${codeError.message}`);
   }
+}
+
+/**
+ * Current chain head.
+ */
+export async function getBlockNumber(): Promise<number> {
+  const hex = await publicRpc('eth_blockNumber', []) as string;
+  return parseInt(hex, 16);
+}
+
+export function parseBlockNumber(block?: string | number | null): number | undefined {
+  if (block === undefined || block === null || block === '') return undefined;
+  if (typeof block === 'number' && Number.isFinite(block)) return block;
+  const hex = String(block);
+  const n = hex.startsWith('0x') || hex.startsWith('0X') ? parseInt(hex, 16) : parseInt(hex, 10);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 /**
@@ -214,24 +244,16 @@ export async function getLogs(
   toBlock: string = 'latest',
   topics?: string[]
 ): Promise<unknown[]> {
-  if (typeof window === 'undefined' || !window.ethereum) {
-    throw new Error('MetaMask not available');
-  }
-
   try {
-    const logs = await window.ethereum.request({
-      method: 'eth_getLogs',
-      params: [
-        {
-          address,
-          fromBlock,
-          toBlock,
-          topics,
-        },
-      ],
-    }) as unknown[];
-
-    return logs;
+    const logs = await publicRpc('eth_getLogs', [
+      {
+        address,
+        fromBlock,
+        toBlock,
+        topics,
+      },
+    ]);
+    return (logs as unknown[]) || [];
   } catch (error: unknown) {
     const logError = error as { message: string };
     throw new Error(`Failed to get logs: ${logError.message}`);

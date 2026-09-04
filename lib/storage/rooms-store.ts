@@ -26,6 +26,7 @@ export interface LiveRoom {
   isLive: boolean;
   isFeatured?: boolean;
   createdAt: number;
+  createdBlock?: number;
   stealthMetaAddress?: string; // Host's stealth meta-address for payments
 }
 

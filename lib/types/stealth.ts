@@ -47,4 +47,6 @@ export interface Announcement {
   viewTag: number;
   txHash: string;
   timestamp: number;
+  blockNumber: number;
+  caller?: string;
 }

@@ -72,6 +72,7 @@ export class MockProtocolAdapter implements ProtocolAdapter {
       viewTag,
       txHash,
       timestamp: Date.now(),
+      blockNumber: 0,
     };
     this.announcements.push(announcement);
     return announcement.txHash;
@@ -208,6 +209,7 @@ export class LiveProtocolAdapter implements ProtocolAdapter {
 
   async scanAnnouncements(fromBlock?: number): Promise<Announcement[]> {
     const { checkAnnouncerDeployed, scanAnnouncements } = await import('../blockchain/contracts');
+    const { getBlockNumber } = await import('../blockchain/transactions');
 
     const isDeployed = await checkAnnouncerDeployed(this.announcerAddress);
     if (!isDeployed) {
@@ -217,7 +219,10 @@ export class LiveProtocolAdapter implements ProtocolAdapter {
       );
     }
 
-    const events = await scanAnnouncements(this.announcerAddress, fromBlock || 0);
+    const startBlock = fromBlock == null || !Number.isFinite(fromBlock)
+      ? await getBlockNumber()
+      : fromBlock;
+    const events = await scanAnnouncements(this.announcerAddress, startBlock);
 
     return events.map((event) => ({
       schemeId: BigInt(event.schemeId),
@@ -227,6 +232,8 @@ export class LiveProtocolAdapter implements ProtocolAdapter {
       viewTag: event.viewTag,
       txHash: event.txHash,
       timestamp: Date.now(),
+      blockNumber: event.blockNumber,
+      caller: event.caller,
     }));
   }
 }

@@ -22,7 +22,6 @@ interface TopNavProps {
   onGoLive?: () => void;
   onInboxToggle?: () => void;
   onBrowse?: () => void;
-  onSetupReceiving?: () => void;
   onViewStealthAddress?: () => void;
   onSwitchAccount?: () => void;
   onDisconnect?: () => void;
@@ -42,7 +41,6 @@ export function TopNav({
   onGoLive,
   onInboxToggle,
   onBrowse,
-  onSetupReceiving,
   onViewStealthAddress,
   onSwitchAccount,
   onDisconnect,
@@ -196,13 +194,7 @@ export function TopNav({
           </div>
         )}
 
-        {isConnected && needsReceivingSetup && onSetupReceiving && (
-          <Button variant="secondary" size="sm" onClick={onSetupReceiving} className="nav-desktop-only">
-            Set up receiving
-          </Button>
-        )}
-
-        {isConnected && onGoLive && (
+        {onGoLive && (
           <Button variant="live" size="sm" onClick={onGoLive} className="nav-go-live">
             <IconLive size={14} />
             <span className="nav-desktop-only">Go Live</span>
@@ -288,20 +280,6 @@ export function TopNav({
                           : 'Connected'}
                   </p>
                 </div>
-
-                {needsReceivingSetup && onSetupReceiving && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="popover-item"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onSetupReceiving();
-                    }}
-                  >
-                    Set up receiving
-                  </button>
-                )}
 
                 {onViewStealthAddress && (
                   <button

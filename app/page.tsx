@@ -35,7 +35,7 @@ const ENTRY_PRICE_ETH = '0.001';
 export default function Home() {
   const metamask = useMetaMask();
   const previousAddressRef = useRef<string | null>(null);
-  const { rooms, loading: roomsLoading, reload: reloadRooms } = useRooms();
+  const { rooms, loading: roomsLoading, reload: reloadRooms, upsertRoom } = useRooms();
 
   const [identity, setIdentity] = useState<StealthIdentity | null>(null);
   const [metaAddress, setMetaAddress] = useState<string>('');
@@ -44,7 +44,6 @@ export default function Home() {
   const [receivingStatus, setReceivingStatus] = useState<ReceivingStatus>('idle');
   const [receivingMessage, setReceivingMessage] = useState('');
   const [viewStealthOpen, setViewStealthOpen] = useState(false);
-  const [pendingGoLive, setPendingGoLive] = useState(false);
 
   const [selectedRoom, setSelectedRoom] = useState<LiveRoom | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -56,6 +55,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const identityRef = useRef<StealthIdentity | null>(null);
 
   const featuredRoom = rooms.find((r) => r.isFeatured) || rooms[0] || null;
 
@@ -66,7 +66,6 @@ export default function Home() {
     setReceivingStatus('idle');
     setReceivingMessage('');
     setViewStealthOpen(false);
-    setPendingGoLive(false);
     setGoLiveModalOpen(false);
     setPaymentModalOpen(false);
     setSelectedRoom(null);
@@ -74,6 +73,7 @@ export default function Home() {
     setInboxOpen(false);
     // Keep inboxMessages — they are local credentials; clearing is safer on account switch
     setInboxMessages([]);
+    identityRef.current = null;
     clearSessionWrapKey();
   };
 
@@ -114,7 +114,6 @@ export default function Home() {
 
     if (prev && next && prev !== next) {
       clearSessionForAccountChange();
-      setNeedsWalletConnect(true);
     } else if (prev && !next) {
       clearSessionForAccountChange();
       setNeedsWalletConnect(false);
@@ -187,46 +186,28 @@ export default function Home() {
     });
   };
 
-  const handleIdentityReady = async (
-    userIdentity: StealthIdentity,
-    userMetaAddress: string,
-    ensName?: string
-  ) => {
-    setIdentity(userIdentity);
-    setMetaAddress(userMetaAddress);
-    if (ensName) {
-      setVerifiedEnsName(ensName);
-    }
+  const handleWalletConnected = () => {
     setNeedsWalletConnect(false);
-
-    if (metamask.address) {
-      await refreshReceivingStatus(metamask.address, userIdentity, ensName);
-      if (pendingGoLive) {
-        setPendingGoLive(false);
-        setGoLiveModalOpen(true);
-      }
-    }
-
-    // Viewer path: continue to payment after connect
     if (selectedRoom) {
       setPaymentModalOpen(true);
     }
   };
 
-  const handleHostEnsVerified = async (ensName: string, signature: string, message: string) => {
+  const handleEnsResolved = async (ensName: string) => {
     if (metamask.address) {
       await storeENSVerification({
         walletAddress: metamask.address,
         ensName,
         chainId: 11155111,
-        message,
-        signature,
+        message: `resolved ${ensName}`,
+        signature: '',
         verifiedAt: new Date().toISOString(),
       });
     }
     setVerifiedEnsName(ensName);
-    if (metamask.address && identity) {
-      await refreshReceivingStatus(metamask.address, identity, ensName);
+    const hostIdentity = identityRef.current || identity;
+    if (metamask.address && hostIdentity) {
+      await refreshReceivingStatus(metamask.address, hostIdentity, ensName);
     }
   };
 
@@ -249,30 +230,11 @@ export default function Home() {
     setNeedsWalletConnect(false);
   };
 
-  const handleSetupReceiving = () => {
-    handleGoLive();
-  };
-
   const handleViewStealthAddress = () => {
-    if (!metamask.isConnected) {
-      setNeedsWalletConnect(true);
-      return;
-    }
-    if (!identity || !metaAddress) {
-      setNeedsWalletConnect(true);
-      return;
-    }
     setViewStealthOpen(true);
   };
 
   const handleRoomSelect = (room: LiveRoom) => {
-    if (!metamask.isConnected) {
-      setNeedsWalletConnect(true);
-      setSelectedRoom(room);
-      return;
-    }
-
-    // Viewer flow: wallet address is enough — no stealth registration required
     setSelectedRoom(room);
     setPaymentModalOpen(true);
   };
@@ -363,21 +325,48 @@ export default function Home() {
     }
   };
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
+    const session = activeRoom;
+    if (!session) return;
+
+    if (session.credential === 'host-stream' && metamask.address) {
+      const confirmed = window.confirm(
+        'End this livestream? The listing will leave Browse. If you cancel the wallet transaction, the room stays live.'
+      );
+      if (!confirmed) return;
+
+      const { parseRoomTokenId, updateRoomStatusOnChain } = await import('@/lib/blockchain/rooms-contract');
+      const tokenId = parseRoomTokenId(session.room.id);
+      if (tokenId === undefined) {
+        setActiveRoom(null);
+        void reloadRooms();
+        return;
+      }
+
+      try {
+        await updateRoomStatusOnChain(metamask.address, tokenId, false);
+        upsertRoom({ ...session.room, isLive: false });
+        setActiveRoom(null);
+        void reloadRooms();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '';
+        if (message.toLowerCase().includes('reject') || message.toLowerCase().includes('denied')) {
+          return;
+        }
+        window.alert(message || 'Could not end the livestream on-chain. The listing may still be live.');
+      }
+      return;
+    }
+
     setActiveRoom(null);
   };
 
   const handleGoLive = () => {
-    if (!metamask.isConnected || !identity) {
-      setPendingGoLive(true);
-      setNeedsWalletConnect(true);
-      return;
-    }
-
     setGoLiveModalOpen(true);
   };
 
   const handleKeysUpdated = async (nextIdentity: StealthIdentity, encoded: string) => {
+    identityRef.current = nextIdentity;
     setIdentity(nextIdentity);
     setMetaAddress(encoded);
     if (metamask.address) {
@@ -390,17 +379,18 @@ export default function Home() {
     }
   };
 
-  const handleStartStream = async (title: string, category: string) => {
-    if (!metamask.address || !verifiedEnsName || !metaAddress || !identity) {
-      throw new Error('Verify ENS and matching stealth keys before creating a room');
+  const handleStartStream = async (title: string, category: string, ensName: string) => {
+    const hostIdentity = identityRef.current || identity;
+    if (!metamask.address || !ensName || !hostIdentity) {
+      throw new Error('Connect a wallet, resolve ENS, and load payment keys before creating a room');
     }
 
     const { createRoomOnChain } = await import('@/lib/blockchain/rooms-contract');
     const tags = [category, 'Live', 'Privacy'];
-    const encodedMeta = encodeMetaAddress(identityToMetaAddress(identity));
+    const encodedMeta = encodeMetaAddress(identityToMetaAddress(hostIdentity));
 
-    const { txHash, tokenId } = await createRoomOnChain(metamask.address, {
-      hostEns: verifiedEnsName,
+    const { txHash, tokenId, blockNumber } = await createRoomOnChain(metamask.address, {
+      hostEns: ensName,
       title,
       category,
       tags,
@@ -410,12 +400,12 @@ export default function Home() {
       encryptedAccessData: '0x',
     });
 
-    console.log('Room created:', txHash, tokenId);
+    console.log('Room created:', txHash, tokenId, blockNumber);
 
     const hostRoom: LiveRoom = {
       id: tokenId ? `room-${tokenId}` : `room-${Date.now()}`,
       host: metamask.address,
-      hostDisplayName: verifiedEnsName,
+      hostDisplayName: ensName,
       title,
       category,
       viewers: 1,
@@ -424,15 +414,15 @@ export default function Home() {
       thumbnail: '',
       isLive: true,
       createdAt: Date.now(),
+      createdBlock: blockNumber,
       stealthMetaAddress: encodedMeta,
     };
 
+    setVerifiedEnsName(ensName);
     setGoLiveModalOpen(false);
+    upsertRoom(hostRoom);
     setActiveRoom({ room: hostRoom, credential: 'host-stream' });
-
-    setTimeout(() => {
-      reloadRooms();
-    }, 3000);
+    void reloadRooms();
   };
 
   const handleSelectCategory = (category: CategoryItem) => {
@@ -472,7 +462,6 @@ export default function Home() {
         onGoLive={handleGoLive}
         onInboxToggle={() => setInboxOpen((v) => !v)}
         onBrowse={clearFilters}
-        onSetupReceiving={handleSetupReceiving}
         onViewStealthAddress={handleViewStealthAddress}
         onSwitchAccount={handleSwitchAccount}
         onDisconnect={handleDisconnect}
@@ -512,6 +501,9 @@ export default function Home() {
         isOpen={paymentModalOpen}
         room={selectedRoom}
         ensName={verifiedEnsName || undefined}
+        isWalletConnected={metamask.isConnected}
+        isConnecting={metamask.isConnecting}
+        onConnectWallet={metamask.connect}
         onClose={() => {
           setPaymentModalOpen(false);
           setSelectedRoom(null);
@@ -541,9 +533,11 @@ export default function Home() {
         metaAddress={metaAddress}
         walletAddress={metamask.address || ''}
         identity={identity}
+        isConnecting={metamask.isConnecting}
+        onConnectWallet={metamask.connect}
         onClose={() => setGoLiveModalOpen(false)}
         onStartStream={handleStartStream}
-        onEnsVerified={handleHostEnsVerified}
+        onEnsResolved={handleEnsResolved}
         onKeysUpdated={handleKeysUpdated}
       />
 
@@ -553,12 +547,11 @@ export default function Home() {
         walletAddress={metamask.address || ''}
         receivingStatus={receivingStatus}
         onClose={() => setViewStealthOpen(false)}
-        onSetupReceiving={handleSetupReceiving}
       />
 
       {needsWalletConnect && (
         <WalletConnect
-          onIdentityReady={handleIdentityReady}
+          onConnected={handleWalletConnected}
           onDismiss={() => setNeedsWalletConnect(false)}
         />
       )}

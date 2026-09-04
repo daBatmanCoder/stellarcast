@@ -38,15 +38,20 @@ export function RoomView({
   const [panelOpen, setPanelOpen] = useState(true);
   const [detectedPayments, setDetectedPayments] = useState<MatchedPayment[]>([]);
 
-  // Scan for payments if this is a host
   const scanner = useAnnouncementScanner({
     identity: isHost ? hostIdentity : null,
     enabled: isHost && hostIdentity !== null,
-    intervalMs: 30000, // Scan every 30 seconds
-    fromBlock: 0,
+    intervalMs: 30000,
+    fromBlock: room.createdBlock,
+    excludeCaller: room.host,
     onPaymentDetected: (payment) => {
       console.log('Payment detected!', payment);
-      setDetectedPayments(prev => [payment, ...prev]);
+      setDetectedPayments((prev) => {
+        if (prev.some((p) => p.announcement.txHash === payment.announcement.txHash)) {
+          return prev;
+        }
+        return [payment, ...prev];
+      });
       onPaymentDetected?.(payment);
     },
   });
@@ -354,7 +359,11 @@ export function RoomView({
             </div>
 
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 12, lineHeight: 1.45 }}>
-              Private livestream access unlocked via stealth payment. Session status and access metadata are available in the side panel.
+              {isHost
+                ? detectedPayments.length > 0
+                  ? `${detectedPayments.length} viewer payment${detectedPayments.length === 1 ? '' : 's'} matched this room.`
+                  : 'Waiting for viewer stealth payments. Room status is in the side panel.'
+                : 'Private livestream access unlocked via stealth payment. Session status and access metadata are available in the side panel.'}
             </p>
           </div>
         </div>

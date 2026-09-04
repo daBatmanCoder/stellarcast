@@ -10,7 +10,7 @@ import {
   parseAbiItem,
   type Hex,
 } from 'viem';
-import { callContract, sendContractTransaction, getLogs, verifyContractDeployed } from './transactions';
+import { callContract, sendContractTransaction, getLogs, verifyContractDeployed, parseBlockNumber } from './transactions';
 import { StealthMetaAddress } from '../types/stealth';
 import { encodeMetaAddress, tryDecodeMetaAddress } from '../crypto/identity';
 import { parseViewTagFromMetadata } from '../crypto/stealth';
@@ -202,7 +202,7 @@ export async function publishAnnouncement(
 
 export async function scanAnnouncements(
   announcerAddress: string,
-  fromBlock: number = 0
+  fromBlock: number
 ): Promise<
   Array<{
     schemeId: string;
@@ -211,7 +211,8 @@ export async function scanAnnouncements(
     metadata: string;
     viewTag: number;
     txHash: string;
-    blockNumber: string;
+    blockNumber: number;
+    caller?: string;
   }>
 > {
   try {
@@ -229,6 +230,7 @@ export async function scanAnnouncements(
           args: {
             schemeId: bigint;
             stealthAddress: string;
+            caller: string;
             ephemeralPubKey: Hex;
             metadata: Hex;
           };
@@ -243,7 +245,8 @@ export async function scanAnnouncements(
             metadata: args.metadata,
             viewTag: parseViewTagFromMetadata(args.metadata),
             txHash: log.transactionHash as string,
-            blockNumber: log.blockNumber as string,
+            blockNumber: parseBlockNumber(log.blockNumber) ?? 0,
+            caller: args.caller,
           },
         ];
       } catch {

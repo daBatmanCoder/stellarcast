@@ -2,14 +2,11 @@
 
 import { useState } from 'react';
 import { useMetaMask } from '@/lib/wallet/useMetaMask';
-import { toChecksumAddress, authenticateWithWallet, reauthenticateWithWallet } from '@/lib/wallet/wallet-auth';
-import { generateStealthIdentity, identityToMetaAddress, encodeMetaAddress } from '@/lib/crypto/identity';
-import { storeIdentity, loadIdentity, getAuthInfo, clearIdentity, setSessionWrapKey } from '@/lib/storage/identity-store';
-import type { StealthIdentity } from '@/lib/types/stealth';
+import { toChecksumAddress } from '@/lib/wallet/wallet-auth';
 import { ModalShell } from './ModalShell';
 
 interface WalletConnectProps {
-  onIdentityReady: (identity: StealthIdentity, metaAddress: string, ensName?: string) => void;
+  onConnected: () => void;
   onDismiss?: () => void;
 }
 
@@ -38,12 +35,10 @@ function CloseIcon() {
   );
 }
 
-export function WalletConnect({ onIdentityReady, onDismiss }: WalletConnectProps) {
+export function WalletConnect({ onConnected, onDismiss }: WalletConnectProps) {
   const metamask = useMetaMask();
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [authError, setAuthError] = useState<string>('');
-  const [warningMessage, setWarningMessage] = useState<string>('');
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState('');
 
   const handleCopyAddress = async () => {
     if (!metamask.address) return;
@@ -52,109 +47,39 @@ export function WalletConnect({ onIdentityReady, onDismiss }: WalletConnectProps
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDisconnect = async () => {
-    await metamask.disconnect();
-    setAuthError('');
-    setWarningMessage('');
-    onDismiss?.();
-  };
-
-  const handleSwitchAccount = async () => {
-    setAuthError('');
-    setWarningMessage('');
-    await metamask.switchAccount();
-  };
-
   const handleDismiss = () => {
-    if (isAuthenticating) return;
+    if (metamask.isConnecting) return;
     onDismiss?.();
   };
 
-  const handleConnect = async () => {
-    const success = await metamask.connect();
-    if (!success || !metamask.address) return;
-
-    setIsAuthenticating(true);
-    setAuthError('');
-    setWarningMessage('');
-
-    try {
-      const checksummedAddress = toChecksumAddress(metamask.address);
-      
-      // Check if identity already exists for this wallet
-      const authInfo = await getAuthInfo();
-      
-      if (authInfo && authInfo.walletAddress.toLowerCase() === metamask.address.toLowerCase()) {
-        // Re-authenticate with existing identity
-        try {
-          const encryptionKey = await reauthenticateWithWallet(
-            checksummedAddress,
-            authInfo.authNonce,
-            authInfo.authTimestamp
-          );
-          
-          const userIdentity = await loadIdentity(metamask.address, encryptionKey);
-          
-          if (!userIdentity) {
-            throw new Error('DECRYPT_FAILED');
-          }
-          
-          setSessionWrapKey(encryptionKey);
-          const meta = identityToMetaAddress(userIdentity);
-          const metaAddress = encodeMetaAddress(meta);
-          onIdentityReady(userIdentity, metaAddress);
-          return;
-        } catch (decryptError) {
-          console.warn('Failed to decrypt stored identity, creating new one');
-          await clearIdentity(metamask.address);
-          setWarningMessage('Previous identity couldn\'t be unlocked — created a new one.');
-        }
-      }
-      
-      // Create new identity bound to this wallet
-      const { encryptionKey, nonce } = await authenticateWithWallet(checksummedAddress);
-      
-      const userIdentity = generateStealthIdentity();
-      await storeIdentity(
-        userIdentity,
-        metamask.address,
-        encryptionKey,
-        nonce,
-        new Date().toISOString()
-      );
-      
-      setSessionWrapKey(encryptionKey);
-      const meta = identityToMetaAddress(userIdentity);
-      const metaAddress = encodeMetaAddress(meta);
-      onIdentityReady(userIdentity, metaAddress);
-    } catch (error) {
-      if (error instanceof Error && error.message === 'DECRYPT_FAILED') {
-        setAuthError('Failed to unlock previous identity');
-      } else {
-        setAuthError(error instanceof Error ? error.message : 'Authentication failed');
-      }
-    } finally {
-      setIsAuthenticating(false);
+  const finishConnect = async () => {
+    setError('');
+    if (metamask.isConnected) {
+      onConnected();
+      return;
     }
+    const ok = await metamask.connect();
+    if (ok) {
+      onConnected();
+      return;
+    }
+    setError(metamask.error || 'Failed to connect wallet');
   };
 
   if (!metamask.isInstalled) {
     return (
-      <ModalShell isOpen={true} allowOverlayClose={true} onClose={() => window.location.href = '/'} mobileBottomSheet={true}>
-        {/* Accent rail */}
-        <div style={{ 
+      <ModalShell isOpen={true} allowOverlayClose={true} onClose={() => onDismiss?.()} mobileBottomSheet={true}>
+        <div style={{
           position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
           height: '4px',
-          backgroundColor: "var(--accent-primary)",
+          backgroundColor: 'var(--accent-primary)',
           borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0'
         }} />
-
-        {/* Close button */}
         <button
-          onClick={() => window.location.href = '/'}
+          onClick={() => onDismiss?.()}
           style={{
             position: 'absolute',
             top: '8px',
@@ -164,73 +89,37 @@ export function WalletConnect({ onIdentityReady, onDismiss }: WalletConnectProps
             border: 'none',
             background: 'none',
             cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '8px',
-            transition: 'background 150ms ease',
             color: 'var(--text-muted)'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.80)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'none';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.48)';
           }}
           aria-label="Close"
         >
           <CloseIcon />
         </button>
-
-        {/* Header */}
         <div style={{ padding: '24px 24px 0' }}>
-          <h2 style={{ 
-            fontSize: '22px', 
-            lineHeight: '28px', 
-            fontWeight: 700,
-            color: 'var(--text-primary)',
-            marginBottom: '8px'
-          }}>
+          <h2 style={{ fontSize: '22px', lineHeight: '28px', fontWeight: 700, marginBottom: '8px' }}>
             MetaMask Required
           </h2>
-          <p style={{ 
-            fontSize: '14px', 
-            lineHeight: '20px',
-            color: 'rgba(255, 255, 255, 0.64)'
-          }}>
-            Install MetaMask to access private streaming
+          <p style={{ fontSize: '14px', lineHeight: '20px', color: 'rgba(255, 255, 255, 0.64)' }}>
+            Install MetaMask to connect
           </p>
         </div>
-
-        {/* Body */}
-        <div style={{ padding: '24px 24px 24px' }}>
-          <a 
-            href="https://metamask.io/download/" 
-            target="_blank" 
+        <div style={{ padding: '24px' }}>
+          <a
+            href="https://metamask.io/download/"
+            target="_blank"
             rel="noopener noreferrer"
             style={{
               display: 'block',
               width: '100%',
               height: '48px',
               borderRadius: '14px',
-              backgroundColor: "var(--accent-primary)",
+              backgroundColor: 'var(--accent-primary)',
               color: 'white',
               fontSize: '15px',
               fontWeight: 600,
               textAlign: 'center',
               lineHeight: '48px',
               textDecoration: 'none',
-              transition: 'all 150ms ease'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#6B4DEE';
-              e.currentTarget.style.transform = 'translateY(-1px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--accent-primary)";
-              e.currentTarget.style.transform = 'translateY(0)';
             }}
           >
             Install MetaMask
@@ -240,92 +129,51 @@ export function WalletConnect({ onIdentityReady, onDismiss }: WalletConnectProps
     );
   }
 
-  const allowClose = !isAuthenticating && (!metamask.isConnected || !!onDismiss);
-
   return (
-    <ModalShell isOpen={true} allowOverlayClose={allowClose} onClose={handleDismiss} mobileBottomSheet={true}>
-      {/* Accent rail */}
-      <div style={{ 
+    <ModalShell isOpen={true} allowOverlayClose={!metamask.isConnecting} onClose={handleDismiss} mobileBottomSheet={true}>
+      <div style={{
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         height: '4px',
-        backgroundColor: "var(--accent-primary)",
+        backgroundColor: 'var(--accent-primary)',
         borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0'
       }} />
 
-      {/* Close button */}
-      {allowClose && (
-        <button
-          onClick={handleDismiss}
-          style={{
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
-            width: '44px',
-            height: '44px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '8px',
-            backgroundColor: 'transparent',
-            border: 'none',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            transition: 'all 150ms ease'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.72)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'transparent';
-            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.48)';
-          }}
-        >
-          <CloseIcon />
-        </button>
-      )}
+      <button
+        onClick={handleDismiss}
+        style={{
+          position: 'absolute',
+          top: '8px',
+          right: '8px',
+          width: '44px',
+          height: '44px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: '8px',
+          backgroundColor: 'transparent',
+          border: 'none',
+          color: 'var(--text-muted)',
+          cursor: 'pointer',
+        }}
+        aria-label="Close"
+      >
+        <CloseIcon />
+      </button>
 
-      {/* Header */}
       <div style={{ padding: '24px 24px 0' }}>
-        <h2 style={{ 
-          fontSize: '22px', 
-          lineHeight: '28px', 
-          fontWeight: 700,
-          color: 'var(--text-primary)',
-          marginBottom: '8px'
-        }}>
-          Welcome to Stellarcast
+        <h2 style={{ fontSize: '22px', lineHeight: '28px', fontWeight: 700, marginBottom: '8px' }}>
+          Connect wallet
         </h2>
-        <p style={{ 
-          fontSize: '14px', 
-          lineHeight: '20px',
-          color: 'rgba(255, 255, 255, 0.64)'
-        }}>
-          Connect your wallet to access private streaming
+        <p style={{ fontSize: '14px', lineHeight: '20px', color: 'rgba(255, 255, 255, 0.64)' }}>
+          MetaMask on Sepolia. No extra signature.
         </p>
       </div>
 
-      {/* Body */}
       <div style={{ padding: '20px 24px 0' }}>
-        {/* Messages */}
-        {warningMessage && (
-          <div style={{
-            padding: '12px',
-            borderRadius: '12px',
-            backgroundColor: 'rgba(255, 185, 0, 0.1)',
-            border: '1px solid rgba(255, 185, 0, 0.3)',
-            color: '#FFB900',
-            fontSize: '14px',
-            marginBottom: '16px'
-          }}>
-            {warningMessage}
-          </div>
-        )}
-
-        {authError && (
+        {error && (
           <div style={{
             padding: '12px',
             borderRadius: '12px',
@@ -335,233 +183,72 @@ export function WalletConnect({ onIdentityReady, onDismiss }: WalletConnectProps
             fontSize: '14px',
             marginBottom: '16px'
           }}>
-            {authError}
+            {error}
           </div>
         )}
 
-        {/* Connected state */}
-        {metamask.isConnected && !isAuthenticating && (
-          <>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              padding: '10px 12px',
-              backgroundColor: "var(--bg-elevated)",
-              borderRadius: '12px',
-              marginBottom: '20px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  backgroundColor: "var(--success)"
-                }} />
-                <span style={{
-                  fontSize: '12px',
-                  fontWeight: 500,
-                  color: "var(--success)",
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px'
-                }}>
-                  Connected
-                </span>
-              </div>
-              <div style={{
-                flex: 1,
-                fontSize: '13px',
-                fontFamily: 'JetBrains Mono, monospace',
-                color: 'rgba(255, 255, 255, 0.72)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}>
-                {toChecksumAddress(metamask.address!).slice(0, 6)}...{toChecksumAddress(metamask.address!).slice(-4)}
-              </div>
-              <button
-                onClick={handleCopyAddress}
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: '8px',
-                  backgroundColor: copied ? 'rgba(61, 220, 151, 0.12)' : 'rgba(255, 255, 255, 0.06)',
-                  border: 'none',
-                  color: copied ? "var(--success)" : 'rgba(255, 255, 255, 0.56)',
-                  cursor: 'pointer',
-                  transition: 'all 150ms ease'
-                }}
-                onMouseEnter={(e) => {
-                  if (!copied) {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!copied) {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)';
-                  }
-                }}
-                title={copied ? 'Copied!' : 'Copy address'}
-              >
-                {copied ? <CheckIcon /> : <CopyIcon />}
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* Signing state */}
-        {isAuthenticating && (
+        {metamask.isConnected && metamask.address && (
           <div style={{
             display: 'flex',
-            flexDirection: 'column',
             alignItems: 'center',
-            padding: '32px 0',
-            gap: '16px'
+            gap: '12px',
+            padding: '10px 12px',
+            backgroundColor: 'var(--bg-elevated)',
+            borderRadius: '12px',
+            marginBottom: '20px'
           }}>
+            <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--success)' }}>Connected</span>
             <div style={{
-              width: '48px',
-              height: '48px',
-              borderRadius: '50%',
-              border: '3px solid rgba(255, 255, 255, 0.1)',
-              borderTopColor: "var(--accent-primary)",
-              animation: 'spin 1s linear infinite'
-            }} />
-            <p style={{
-              fontSize: '14px',
-              color: 'rgba(255, 255, 255, 0.64)'
+              flex: 1,
+              fontSize: '13px',
+              fontFamily: 'JetBrains Mono, monospace',
+              color: 'rgba(255, 255, 255, 0.72)',
             }}>
-              Confirm in wallet...
-            </p>
+              {toChecksumAddress(metamask.address).slice(0, 6)}...{toChecksumAddress(metamask.address).slice(-4)}
+            </div>
+            <button
+              onClick={handleCopyAddress}
+              style={{
+                width: '32px',
+                height: '32px',
+                border: 'none',
+                borderRadius: '8px',
+                backgroundColor: copied ? 'rgba(61, 220, 151, 0.12)' : 'rgba(255, 255, 255, 0.06)',
+                color: copied ? 'var(--success)' : 'rgba(255, 255, 255, 0.56)',
+                cursor: 'pointer',
+              }}
+              title={copied ? 'Copied!' : 'Copy address'}
+            >
+              {copied ? <CheckIcon /> : <CopyIcon />}
+            </button>
           </div>
         )}
       </div>
 
-      {/* CTA stack */}
-      <div style={{ padding: '8px 24px 0' }}>
-        {metamask.isConnected && !isAuthenticating ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <button
-              onClick={handleConnect}
-              style={{
-                width: '100%',
-                height: '48px',
-                borderRadius: '14px',
-                backgroundColor: "var(--accent-primary)",
-                border: 'none',
-                color: 'white',
-                fontSize: '15px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 150ms ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#6B4DEE';
-                e.currentTarget.style.transform = 'translateY(-1px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "var(--accent-primary)";
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
-            >
-              Sign to Continue
-            </button>
-            <button
-              onClick={handleSwitchAccount}
-              disabled={metamask.isSwitching}
-              style={{
-                width: '100%',
-                height: '44px',
-                borderRadius: '14px',
-                backgroundColor: 'transparent',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                color: 'rgba(255, 255, 255, 0.72)',
-                fontSize: '15px',
-                fontWeight: 600,
-                cursor: metamask.isSwitching ? 'not-allowed' : 'pointer',
-                opacity: metamask.isSwitching ? 0.6 : 1,
-                transition: 'all 150ms ease'
-              }}
-            >
-              {metamask.isSwitching ? 'Switching…' : 'Switch account'}
-            </button>
-            <button
-              onClick={handleDisconnect}
-              style={{
-                width: '100%',
-                height: '44px',
-                borderRadius: '14px',
-                backgroundColor: 'transparent',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                color: 'rgba(255, 255, 255, 0.72)',
-                fontSize: '15px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 150ms ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(255, 92, 122, 0.5)';
-                e.currentTarget.style.color = '#FF5C7A';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.72)';
-              }}
-            >
-              Disconnect
-            </button>
-          </div>
-        ) : !isAuthenticating ? (
-          <button
-            onClick={metamask.connect}
-            disabled={!metamask.isInstalled || metamask.isConnecting}
-            style={{
-              width: '100%',
-              height: '48px',
-              borderRadius: '14px',
-              backgroundColor: "var(--accent-primary)",
-              border: 'none',
-              color: 'white',
-              fontSize: '15px',
-              fontWeight: 600,
-              cursor: !metamask.isInstalled || metamask.isConnecting ? 'not-allowed' : 'pointer',
-              opacity: !metamask.isInstalled || metamask.isConnecting ? 0.5 : 1,
-              transition: 'all 150ms ease'
-            }}
-            onMouseEnter={(e) => {
-              if (!e.currentTarget.disabled) {
-                e.currentTarget.style.backgroundColor = '#6B4DEE';
-                e.currentTarget.style.transform = 'translateY(-1px)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "var(--accent-primary)";
-              e.currentTarget.style.transform = 'translateY(0)';
-            }}
-          >
-            {metamask.isConnecting ? 'Connecting...' : 'Connect Wallet'}
-          </button>
-        ) : null}
+      <div style={{ padding: '8px 24px 24px' }}>
+        <button
+          onClick={() => void finishConnect()}
+          disabled={metamask.isConnecting}
+          style={{
+            width: '100%',
+            height: '48px',
+            borderRadius: '14px',
+            backgroundColor: 'var(--accent-primary)',
+            border: 'none',
+            color: 'white',
+            fontSize: '15px',
+            fontWeight: 600,
+            cursor: metamask.isConnecting ? 'not-allowed' : 'pointer',
+            opacity: metamask.isConnecting ? 0.6 : 1,
+          }}
+        >
+          {metamask.isConnecting
+            ? 'Connecting…'
+            : metamask.isConnected
+              ? 'Continue'
+              : 'Connect Wallet'}
+        </button>
       </div>
-
-      {/* Footnote */}
-      <div style={{ padding: '16px 24px 24px', textAlign: 'center' }}>
-        <p style={{
-          fontSize: '12px',
-          lineHeight: '16px',
-          color: 'var(--text-muted)'
-        }}>
-          Sign a message to create your private identity.<br />This does not grant access to your funds.
-        </p>
-      </div>
-
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </ModalShell>
   );
 }

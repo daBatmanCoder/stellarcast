@@ -13,7 +13,6 @@ interface ViewStealthAddressModalProps {
   walletAddress: string;
   receivingStatus: ReceivingStatus;
   onClose: () => void;
-  onSetupReceiving?: () => void;
 }
 
 export function ViewStealthAddressModal({
@@ -22,7 +21,6 @@ export function ViewStealthAddressModal({
   walletAddress,
   receivingStatus,
   onClose,
-  onSetupReceiving,
 }: ViewStealthAddressModalProps) {
   const [copied, setCopied] = useState(false);
 
@@ -119,7 +117,7 @@ export function ViewStealthAddressModal({
               color: metaAddress ? 'var(--text-primary)' : 'var(--text-muted)',
             }}
           >
-            {metaAddress || 'Connect and sign in to generate local stealth keys.'}
+            {metaAddress || 'Go Live to create payment keys for this wallet.'}
           </p>
         </div>
 
@@ -139,18 +137,6 @@ export function ViewStealthAddressModal({
         </p>
 
         <div style={{ display: 'flex', gap: 8 }}>
-          {(receivingStatus === 'needs-setup' || receivingStatus === 'keys-mismatch') && onSetupReceiving && (
-            <Button
-              variant="primary"
-              fullWidth
-              onClick={() => {
-                onClose();
-                onSetupReceiving();
-              }}
-            >
-              Set up receiving
-            </Button>
-          )}
           <Button variant="secondary" fullWidth onClick={onClose}>
             Close
           </Button>
