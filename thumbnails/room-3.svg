@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" aria-label="Stream preview">
+  <rect width="640" height="360" fill="#141810"/>
+  <rect x="24" y="24" width="120" height="8" rx="2" fill="#00f593" opacity="0.9"/>
+  <rect x="24" y="48" width="80" height="8" rx="2" fill="#2f2f35"/>
+  <circle cx="320" cy="170" r="48" fill="#18181b" stroke="#00f593" stroke-width="3"/>
+  <polygon points="312,150 312,190 348,170" fill="#00f593"/>
+  <rect x="24" y="300" width="200" height="10" rx="2" fill="#efeff1" opacity="0.85"/>
+  <rect x="24" y="322" width="140" height="8" rx="2" fill="#8b8b96"/>
+  <text x="560" y="40" fill="#00f593" font-family="system-ui,sans-serif" font-size="14" font-weight="700" text-anchor="end">CODE</text>
+</svg>
