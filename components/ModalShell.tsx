@@ -55,7 +55,7 @@ export function ModalShell({
 
   const modalContent = (
     <>
-      {/* Overlay */}
+      {/* Overlay backdrop with blur */}
       <div
         style={{
           position: 'fixed',
@@ -65,11 +65,10 @@ export function ModalShell({
           left: 0,
           width: '100vw',
           height: '100vh',
-          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          backgroundColor: 'rgba(0, 0, 0, 0.72)',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
-          zIndex: 50,
-          animation: 'modal-overlay-fade 160ms ease-out forwards'
+          zIndex: 50
         }}
       />
 
