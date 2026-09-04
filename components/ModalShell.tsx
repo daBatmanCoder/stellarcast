@@ -20,10 +20,17 @@ export function ModalShell({
 }: ModalShellProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
-  // Handle client-side mounting
+  // Handle client-side mounting + mobile detection
   useEffect(() => {
     setMounted(true);
+    const mediaQuery = window.matchMedia('(max-width: 640px)');
+    setIsMobile(mediaQuery.matches);
+    
+    const handleChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
   useEffect(() => {
@@ -52,6 +59,8 @@ export function ModalShell({
       onClose();
     }
   };
+
+  const isBottomSheet = mobileBottomSheet && isMobile;
 
   const modalContent = (
     <>
@@ -82,9 +91,9 @@ export function ModalShell({
           bottom: 0,
           left: 0,
           display: 'flex',
-          alignItems: mobileBottomSheet ? 'flex-end' : 'center',
+          alignItems: isBottomSheet ? 'flex-end' : 'center',
           justifyContent: 'center',
-          padding: 16,
+          padding: isBottomSheet ? 0 : 16,
           zIndex: 1010
         }}
       >
@@ -96,18 +105,50 @@ export function ModalShell({
           style={{
             position: 'relative',
             width: '100%',
-            maxWidth: mobileBottomSheet ? '100%' : 400,
-            borderRadius: mobileBottomSheet ? '20px 20px 0 0' : '24px',
+            maxWidth: isBottomSheet ? '100%' : 400,
+            maxHeight: isBottomSheet ? 'min(92dvh, 640px)' : 'none',
+            borderRadius: isBottomSheet ? '20px 20px 0 0' : '24px',
             backgroundColor: '#16161D',
             border: '1px solid rgba(255, 255, 255, 0.08)',
             boxShadow: '0 24px 48px rgba(0, 0, 0, 0.48)',
-            paddingBottom: mobileBottomSheet ? 'env(safe-area-inset-bottom, 0px)' : 0
+            paddingBottom: isBottomSheet ? 'max(20px, env(safe-area-inset-bottom))' : 0,
+            overflowY: isBottomSheet ? 'auto' : 'visible',
+            animation: isBottomSheet ? 'slideUp 280ms ease-out' : 'none'
           }}
         >
+          {/* Drag handle for bottom sheet */}
+          {isBottomSheet && (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              paddingTop: '12px',
+              paddingBottom: '8px'
+            }}>
+              <div style={{
+                width: '36px',
+                height: '4px',
+                backgroundColor: 'rgba(255, 255, 255, 0.24)',
+                borderRadius: '2px'
+              }} />
+            </div>
+          )}
           {children}
         </div>
       </div>
 
+      {/* Keyframes for sheet animation */}
+      <style>{`
+        @keyframes slideUp {
+          from {
+            transform: translateY(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </>
   );
 

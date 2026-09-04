@@ -14,7 +14,7 @@ export function LiveGrid({ rooms, onSelectRoom }: LiveGridProps) {
         Live Channels
       </h2>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="live-grid">
         {rooms.map((room) => (
           <button
             key={room.id}
@@ -96,6 +96,25 @@ export function LiveGrid({ rooms, onSelectRoom }: LiveGridProps) {
           </button>
         ))}
       </div>
+
+      <style jsx>{`
+        .live-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 16px;
+        }
+        @media (max-width: 1023px) {
+          .live-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+        }
+        @media (max-width: 768px) {
+          .live-grid {
+            grid-template-columns: 1fr;
+            gap: 12px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -125,7 +125,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
 
   if (!metamask.isInstalled) {
     return (
-      <ModalShell isOpen={true} allowOverlayClose={true} onClose={() => window.location.href = '/'}>
+      <ModalShell isOpen={true} allowOverlayClose={true} onClose={() => window.location.href = '/'} mobileBottomSheet={true}>
         {/* Accent rail */}
         <div style={{ 
           position: 'absolute',
@@ -142,10 +142,10 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
           onClick={() => window.location.href = '/'}
           style={{
             position: 'absolute',
-            top: '12px',
-            right: '12px',
-            width: '32px',
-            height: '32px',
+            top: '8px',
+            right: '8px',
+            width: '44px',
+            height: '44px',
             border: 'none',
             background: 'none',
             cursor: 'pointer',
@@ -228,7 +228,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
   const allowClose = !isAuthenticating && !metamask.isConnected;
 
   return (
-    <ModalShell isOpen={true} allowOverlayClose={allowClose}>
+    <ModalShell isOpen={true} allowOverlayClose={allowClose} mobileBottomSheet={true}>
       {/* Accent rail */}
       <div style={{ 
         position: 'absolute',
@@ -246,10 +246,10 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
           onClick={handleDisconnect}
           style={{
             position: 'absolute',
-            top: '14px',
-            right: '14px',
-            width: '32px',
-            height: '32px',
+            top: '8px',
+            right: '8px',
+            width: '44px',
+            height: '44px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

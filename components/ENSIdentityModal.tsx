@@ -106,7 +106,7 @@ export function ENSIdentityModal({
   const allowClose = step === 'input';
 
   return (
-    <ModalShell isOpen={isOpen} onClose={onClose} allowOverlayClose={allowClose}>
+    <ModalShell isOpen={isOpen} onClose={onClose} allowOverlayClose={allowClose} mobileBottomSheet={true}>
       {/* Accent rail */}
       <div style={{ 
         position: 'absolute',
@@ -124,10 +124,10 @@ export function ENSIdentityModal({
           onClick={onClose}
           style={{
             position: 'absolute',
-            top: '14px',
-            right: '14px',
-            width: '32px',
-            height: '32px',
+            top: '8px',
+            right: '8px',
+            width: '44px',
+            height: '44px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

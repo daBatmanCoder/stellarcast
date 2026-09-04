@@ -238,3 +238,19 @@ h3 {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--elevated);
 }
+
+/* Responsive layout */
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0 !important;
+  }
+  .container-custom {
+    padding: 0 16px !important;
+  }
+}
+
+@media (max-width: 1023px) and (min-width: 769px) {
+  .main-content {
+    margin-left: 0 !important;
+  }
+}

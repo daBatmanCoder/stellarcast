@@ -10,7 +10,7 @@ interface LeftRailProps {
 export function LeftRail({ rooms, onSelectRoom }: LeftRailProps) {
   return (
     <aside
-      className="fixed left-0 bottom-0 overflow-y-auto"
+      className="fixed left-0 bottom-0 overflow-y-auto left-rail-desktop"
       style={{
         top: '48px',
         width: '190px',
@@ -74,6 +74,14 @@ export function LeftRail({ rooms, onSelectRoom }: LeftRailProps) {
           Demo rooms for hackathon
         </p>
       </div>
+
+      <style jsx>{`
+        @media (max-width: 768px) {
+          .left-rail-desktop {
+            display: none;
+          }
+        }
+      `}</style>
     </aside>
   );
 }

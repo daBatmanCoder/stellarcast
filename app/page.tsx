@@ -12,6 +12,7 @@ import { ENSIdentityModal } from '@/components/ENSIdentityModal';
 import { PaymentModal } from '@/components/PaymentModal';
 import { WalletConnect } from '@/components/WalletConnect';
 import { RoomView } from '@/components/RoomView';
+import { MobileDrawer } from '@/components/MobileDrawer';
 import { SEED_ROOMS, type LiveRoom } from '@/lib/data/seed-rooms';
 import type { StealthIdentity } from '@/lib/types/stealth';
 import { generateStealthAddress } from '@/lib/crypto/stealth';
@@ -35,6 +36,7 @@ export default function Home() {
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
   const [activeRoom, setActiveRoom] = useState<{ room: LiveRoom; credential: string } | null>(null);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   
   // Demo state
   const [currentEnsForPayment, setCurrentEnsForPayment] = useState('');
@@ -202,16 +204,26 @@ export default function Home() {
           address={metamask.address}
           verifiedEnsName={verifiedEnsName}
           onConnect={handleConnectClick}
+          onMenuToggle={() => setMobileDrawerOpen(true)}
         />
 
-        {/* Left Rail */}
+        {/* Left Rail - Desktop only */}
         <LeftRail
+          rooms={SEED_ROOMS}
+          onSelectRoom={handleRoomSelect}
+        />
+
+        {/* Mobile Drawer */}
+        <MobileDrawer
+          isOpen={mobileDrawerOpen}
+          onClose={() => setMobileDrawerOpen(false)}
           rooms={SEED_ROOMS}
           onSelectRoom={handleRoomSelect}
         />
 
         {/* Main Content */}
         <main
+          className="main-content"
           style={{
             marginLeft: '190px',
             paddingTop: '48px',
