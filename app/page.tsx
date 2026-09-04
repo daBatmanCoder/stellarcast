@@ -1,419 +1,269 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { StealthIdentity } from '@/lib/types/stealth';
-import { identityToMetaAddress, generateStealthIdentity } from '@/lib/crypto/identity';
-import { generateStealthAddress } from '@/lib/crypto/stealth';
-import {
-  getProtocolAdapter,
-  setProtocolAdapter,
-  MockProtocolAdapter,
-  LiveProtocolAdapter,
-} from '@/lib/protocol/adapters';
 import { useMetaMask } from '@/lib/wallet/useMetaMask';
-import { deriveAccessCredential } from '@/lib/crypto/credentials';
-import { sendEthTransaction, waitForTransactionReceipt } from '@/lib/blockchain/transactions';
-import { SEPOLIA_CHAIN_ID } from '@/lib/blockchain/contracts';
-import { Hero } from '@/components/Hero';
-import { WalletConnect } from '@/components/WalletConnect';
 import { NetworkGuard } from '@/components/NetworkGuard';
-import { Browse } from '@/components/Browse';
-import { PaymentSlideOver } from '@/components/PaymentSlideOver';
-import { RecipientScan } from '@/components/RecipientScan';
-
-type ViewState = 'landing' | 'wallet-connect' | 'browse' | 'scan' | 'stream';
-type PaymentStatus = 'idle' | 'pending' | 'confirming' | 'success' | 'error';
+import { TopNav } from '@/components/TopNav';
+import { LeftRail } from '@/components/LeftRail';
+import { FeaturedCarousel } from '@/components/FeaturedCarousel';
+import { LiveGrid } from '@/components/LiveGrid';
+import { Inbox, type InboxMessage } from '@/components/Inbox';
+import { ENSIdentityModal } from '@/components/ENSIdentityModal';
+import { PaymentModal } from '@/components/PaymentModal';
+import { WalletConnect } from '@/components/WalletConnect';
+import { SEED_ROOMS, type LiveRoom } from '@/lib/data/seed-rooms';
+import type { StealthIdentity } from '@/lib/types/stealth';
+import { generateStealthAddress } from '@/lib/crypto/stealth';
+import { identityToMetaAddress } from '@/lib/crypto/identity';
+import { sendEthTransaction, waitForTransactionReceipt } from '@/lib/blockchain/transactions';
+import { storeENSVerification, getENSVerification } from '@/lib/storage/ens-store';
 
 export default function Home() {
-  const [viewState, setViewState] = useState<ViewState>('landing');
+  const metamask = useMetaMask();
+  
+  // Auth state
   const [identity, setIdentity] = useState<StealthIdentity | null>(null);
   const [metaAddress, setMetaAddress] = useState<string>('');
-  const [selectedEventId, setSelectedEventId] = useState<string>('');
-  const [paymentSlideOverOpen, setPaymentSlideOverOpen] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('idle');
-  const [txHash, setTxHash] = useState<string>('');
-  const [paymentError, setPaymentError] = useState<string>('');
-  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
-  const [connectionState, setConnectionState] = useState<RTCPeerConnectionState>('new');
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [verifiedEnsName, setVerifiedEnsName] = useState<string>('');
+  const [needsWalletConnect, setNeedsWalletConnect] = useState(false);
+
+  // UI state
+  const [selectedRoom, setSelectedRoom] = useState<LiveRoom | null>(null);
+  const [ensModalOpen, setEnsModalOpen] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
   
-  const metamask = useMetaMask();
+  // Demo state
+  const [currentEnsForPayment, setCurrentEnsForPayment] = useState('');
+  const featuredRoom = SEED_ROOMS.find(r => r.isFeatured) || SEED_ROOMS[0];
 
-  // No longer need to resolve ENS here - it comes from verified flow
-
-  // Initialize protocol adapter
+  // Check for existing verified ENS on mount
   useEffect(() => {
-    const initAdapter = async () => {
-      // Check Sepolia contracts
-      if (metamask.isConnected && metamask.chainId === '0xaa36a7') {
-        const { checkRegistryDeployed, checkAnnouncerDeployed } = await import('../lib/blockchain/contracts');
-        
-        try {
-          const registryExists = await checkRegistryDeployed('0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538');
-          const announcerExists = await checkAnnouncerDeployed('0x55649E01B5Df198D18D95b5cc5051630cfD45564');
-          
-          if (registryExists && announcerExists) {
-            const liveAdapter = new LiveProtocolAdapter(
-              SEPOLIA_CHAIN_ID,
-              '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
-              '0x55649E01B5Df198D18D95b5cc5051630cfD45564'
-            );
-            setProtocolAdapter(liveAdapter);
-            return;
-          }
-        } catch (error) {
-          console.error('Error checking contracts:', error);
+    const checkExistingENS = async () => {
+      if (metamask.isConnected && metamask.address) {
+        const existing = await getENSVerification(metamask.address);
+        if (existing) {
+          setVerifiedEnsName(existing.ensName);
         }
       }
-
-      // Fallback to mock
-      const mockAdapter = new MockProtocolAdapter();
-      const creatorIdentity = generateStealthIdentity();
-      const creatorMeta = identityToMetaAddress(creatorIdentity);
-      mockAdapter.registerMetaAddress('0x1234...5678', creatorMeta);
-      setProtocolAdapter(mockAdapter);
     };
-
-    initAdapter();
-  }, [metamask.isConnected, metamask.chainId]);
+    checkExistingENS();
+  }, [metamask.isConnected, metamask.address]);
 
   const handleIdentityReady = (userIdentity: StealthIdentity, userMetaAddress: string, ensName?: string) => {
     setIdentity(userIdentity);
     setMetaAddress(userMetaAddress);
-    setVerifiedEnsName(ensName || '');
-    setViewState('browse');
+    if (ensName) {
+      setVerifiedEnsName(ensName);
+    }
+    setNeedsWalletConnect(false);
   };
 
-  const handleSelectEvent = (eventId: string) => {
-    setSelectedEventId(eventId);
-    setPaymentSlideOverOpen(true);
-    setPaymentStatus('idle');
-    setPaymentError('');
-    setTxHash('');
+  const handleConnectClick = () => {
+    setNeedsWalletConnect(true);
   };
 
-  const handleConfirmPayment = async () => {
-    if (!identity || !metamask.address) {
-      setPaymentError('Please connect wallet first');
+  const handleRoomSelect = (room: LiveRoom) => {
+    if (!metamask.isConnected) {
+      setNeedsWalletConnect(true);
       return;
     }
 
-    setPaymentStatus('pending');
-    setPaymentError('');
-    setTxHash('');
-
-    const adapter = getProtocolAdapter();
-    const creatorAddress = '0x1234...5678';
-    
-    try {
-      const creatorMeta = await adapter.getMetaAddress(creatorAddress);
-
-      if (!creatorMeta) {
-        throw new Error('Creator has not registered a stealth meta-address');
-      }
-
-      const stealthPayment = generateStealthAddress(creatorMeta);
-      const stealthAddressHex = '0x' + Buffer.from(stealthPayment.stealthAddress).toString('hex');
-      
-      // Send real payment transaction
-      const hash = await sendEthTransaction(
-        metamask.address,
-        stealthAddressHex,
-        '0.05' // 0.05 ETH as shown in UI
-      );
-      setTxHash(hash);
-      setPaymentStatus('confirming');
-      
-      await waitForTransactionReceipt(hash);
-      
-      setPaymentStatus('success');
-      
-      // Auto-transition to stream after success
-      setTimeout(() => {
-        setPaymentSlideOverOpen(false);
-        setViewState('stream');
-      }, 2000);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Payment failed';
-      setPaymentError(errorMsg);
-      setPaymentStatus('error');
+    if (!identity) {
+      setNeedsWalletConnect(true);
+      return;
     }
+
+    setSelectedRoom(room);
+    setEnsModalOpen(true);
   };
 
-  // Initialize WebRTC when entering stream view
-  useEffect(() => {
-    const initWebRTC = async () => {
-      if (viewState !== 'stream') return;
+  const handleENSVerified = async (ensName: string, signature: string, message: string) => {
+    // Store verified ENS
+    if (metamask.address) {
+      await storeENSVerification({
+        walletAddress: metamask.address,
+        ensName,
+        chainId: 11155111,
+        message,
+        signature,
+        verifiedAt: new Date().toISOString()
+      });
+      setVerifiedEnsName(ensName);
+    }
 
-      try {
-        const { createPeerConnection, onConnectionStateChange, getUserMedia } = await import('@/lib/webrtc/video-stream');
-        
-        // Create peer connection
-        const pc = createPeerConnection();
-        setPeerConnection(pc);
+    setCurrentEnsForPayment(ensName);
+    setEnsModalOpen(false);
+    
+    // Open payment modal
+    setTimeout(() => {
+      setPaymentModalOpen(true);
+    }, 300);
+  };
 
-        // Monitor connection state
-        onConnectionStateChange(pc, (state) => {
-          setConnectionState(state);
-        });
+  const handlePayment = async (): Promise<string> => {
+    if (!identity || !selectedRoom || !metamask.address) {
+      throw new Error('Missing payment requirements');
+    }
 
-        // Get local media stream (for demo/preview)
-        try {
-          const stream = await getUserMedia({ video: true, audio: true });
-          setLocalStream(stream);
-        } catch (mediaError) {
-          console.warn('Could not access media devices:', mediaError);
-          // Stream view still works without local media
-        }
-      } catch (error) {
-        console.error('WebRTC initialization failed:', error);
-      }
+    // Generate stealth address for the room host
+    // In demo, we'll use a mock meta-address derived from the host address
+    const meta = identityToMetaAddress(identity);
+    const stealthPayment = generateStealthAddress(meta);
+    const stealthAddressHex = '0x' + Buffer.from(stealthPayment.stealthAddress).toString('hex');
+
+    // Send real payment on Sepolia
+    const txHash = await sendEthTransaction(
+      metamask.address,
+      stealthAddressHex,
+      '0.01'
+    );
+
+    // Wait for confirmation (simplified for demo)
+    await waitForTransactionReceipt(txHash);
+
+    return txHash;
+  };
+
+  const handlePaymentSuccess = (txHash: string) => {
+    if (!selectedRoom) return;
+
+    // Create inbox message with encrypted password
+    const encryptedPassword = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')}`;
+
+    const message: InboxMessage = {
+      id: `msg-${Date.now()}`,
+      roomId: selectedRoom.id,
+      roomTitle: selectedRoom.title,
+      encryptedPassword,
+      timestamp: new Date().toISOString(),
+      isRead: false
     };
 
-    initWebRTC();
-  }, [viewState]);
+    setInboxMessages(prev => [message, ...prev]);
+    setPaymentModalOpen(false);
+    
+    // Auto-open inbox and show notification
+    setTimeout(() => {
+      setInboxOpen(true);
+    }, 500);
+  };
 
-  // Cleanup WebRTC on unmount or leaving stream
-  useEffect(() => {
-    return () => {
-      if (peerConnection) {
-        peerConnection.close();
-      }
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [peerConnection, localStream]);
-
-  // Landing view
-  if (viewState === 'landing') {
-    return (
-      <main className="min-h-screen" style={{ backgroundColor: 'var(--base)' }}>
-        <Hero onGetStarted={() => setViewState('wallet-connect')} />
-      </main>
+  const handleUsePassword = (message: InboxMessage) => {
+    // Mark as read
+    setInboxMessages(prev =>
+      prev.map(m => m.id === message.id ? { ...m, isRead: true } : m)
     );
+
+    // In full implementation, this would join the WebRTC room
+    alert(`Joining room with password: ${message.encryptedPassword.slice(0, 20)}...`);
+    setInboxOpen(false);
+  };
+
+  // Show wallet connect if needed
+  if (needsWalletConnect || (!identity && metamask.isConnected)) {
+    return <WalletConnect onIdentityReady={handleIdentityReady} />;
   }
 
-  // Wallet connect view
-  if (viewState === 'wallet-connect') {
-    return (
-      <main className="min-h-screen" style={{ backgroundColor: 'var(--base)' }}>
-        <WalletConnect onIdentityReady={handleIdentityReady} />
-      </main>
-    );
-  }
-
-  // Authenticated views with network guard
   return (
     <NetworkGuard>
-      <main className="min-h-screen" style={{ backgroundColor: 'var(--base)' }}>
-        {/* Header */}
-        <header className="sticky top-0 z-30" style={{ 
-          borderBottom: '1px solid var(--border)',
-          backgroundColor: 'rgba(10, 10, 12, 0.8)',
-          backdropFilter: 'blur(12px)'
-        }}>
-          <div className="container-custom">
-            <div className="flex items-center justify-between py-4">
-              <h1 style={{ fontSize: '1.25rem', fontWeight: 600 }}>
-                Stellarcast
-              </h1>
-              
-              {metamask.isConnected && (
-                <div className="card px-3 py-2 flex items-center gap-2">
-                  <div className="status-dot" style={{ backgroundColor: 'var(--success)' }}></div>
-                  <div className="flex flex-col min-w-0">
-                    {verifiedEnsName ? (
-                      <>
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs font-semibold truncate" style={{ color: 'var(--accent)' }}>
-                            {verifiedEnsName}
-                          </span>
-                          <span className="text-[9px] px-1 rounded" style={{ 
-                            color: 'var(--success)', 
-                            backgroundColor: 'var(--elevated)',
-                            fontWeight: 600
-                          }}>
-                            ✓
-                          </span>
-                        </div>
-                        <span className="mono text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>
-                          {metamask.address?.slice(0, 6)}...{metamask.address?.slice(-4)}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="mono text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {metamask.address?.slice(0, 6)}...{metamask.address?.slice(-4)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Tabs */}
-            {(viewState === 'browse' || viewState === 'scan') && (
-              <div className="flex gap-1 -mb-px">
-                <button
-                  onClick={() => setViewState('browse')}
-                  className="px-4 py-3 text-sm font-medium transition-colors"
-                  style={{
-                    color: viewState === 'browse' ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                    borderBottom: viewState === 'browse' ? '2px solid var(--accent)' : '2px solid transparent'
-                  }}
-                >
-                  Browse
-                </button>
-                <button
-                  onClick={() => setViewState('scan')}
-                  className="px-4 py-3 text-sm font-medium transition-colors"
-                  style={{
-                    color: viewState === 'scan' ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                    borderBottom: viewState === 'scan' ? '2px solid var(--accent)' : '2px solid transparent'
-                  }}
-                >
-                  Scan
-                </button>
-              </div>
-            )}
-          </div>
-        </header>
-
-        {/* Browse Events */}
-        {viewState === 'browse' && (
-          <Browse 
-            adapter={getProtocolAdapter()} 
-            onSelectEvent={handleSelectEvent} 
-          />
-        )}
-
-        {/* Recipient Scan */}
-        {viewState === 'scan' && identity && (
-          <RecipientScan
-            identity={identity}
-            registryAddress="0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538"
-            announcerAddress="0x55649E01B5Df198D18D95b5cc5051630cfD45564"
-          />
-        )}
-
-        {/* Payment Slide-Over */}
-        <PaymentSlideOver
-          isOpen={paymentSlideOverOpen}
-          onClose={() => setPaymentSlideOverOpen(false)}
-          eventTitle="Private Crypto Workshop"
-          price="0.05 ETH"
-          onConfirm={handleConfirmPayment}
-          status={paymentStatus}
-          txHash={txHash}
-          error={paymentError}
+      <div style={{ backgroundColor: 'var(--base)', minHeight: '100vh' }}>
+        {/* Top Nav */}
+        <TopNav
+          isConnected={metamask.isConnected}
+          address={metamask.address}
+          verifiedEnsName={verifiedEnsName}
+          onConnect={handleConnectClick}
         />
 
-        {/* Stream View */}
-        {viewState === 'stream' && (
-          <div className="container-custom py-12">
-            <div className="max-w-5xl mx-auto space-y-6">
-              {/* Video player */}
-              <div className="relative aspect-video rounded-2xl overflow-hidden" style={{ backgroundColor: 'var(--elevated)' }}>
-                {/* Live indicator */}
-                <div className="absolute top-4 left-4 z-10 live-indicator">
-                  <span className="live-dot"></span>
-                  LIVE
-                </div>
+        {/* Left Rail */}
+        <LeftRail
+          rooms={SEED_ROOMS}
+          onSelectRoom={handleRoomSelect}
+        />
 
-                {/* Connection state badge */}
-                <div className="absolute top-4 right-4 z-10 card px-3 py-1 flex items-center gap-2">
-                  <div 
-                    className="status-dot"
+        {/* Main Content */}
+        <main
+          style={{
+            marginLeft: '190px',
+            paddingTop: '48px',
+            minHeight: '100vh'
+          }}
+        >
+          <div className="container-custom py-8">
+            {/* Featured Carousel */}
+            <FeaturedCarousel
+              room={featuredRoom}
+              onJoin={handleRoomSelect}
+            />
+
+            {/* Live Grid */}
+            <LiveGrid
+              rooms={SEED_ROOMS}
+              onSelectRoom={handleRoomSelect}
+            />
+
+            {/* Categories strip could go here */}
+            <div className="mt-12 space-y-4">
+              <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Categories
+              </h2>
+              <div className="flex gap-4 overflow-x-auto pb-4">
+                {['Science & Technology', 'Software Development', 'Finance', 'Art', 'Events', 'Community'].map((cat) => (
+                  <div
+                    key={cat}
+                    className="flex-shrink-0 w-32 h-44 rounded-lg flex items-end p-4 cursor-pointer hover:scale-105 transition-transform"
                     style={{
-                      backgroundColor: connectionState === 'connected' ? 'var(--success)' :
-                                     connectionState === 'connecting' ? 'var(--warn)' :
-                                     'var(--text-tertiary)'
+                      background: 'linear-gradient(135deg, var(--accent) 0%, var(--live) 100%)',
+                      opacity: 0.9
                     }}
-                  ></div>
-                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {connectionState === 'connected' ? 'Connected' :
-                     connectionState === 'connecting' ? 'Connecting...' :
-                     connectionState === 'new' ? 'Ready' :
-                     connectionState}
-                  </span>
-                </div>
-
-                {/* Video element */}
-                {localStream ? (
-                  <video
-                    ref={(video) => {
-                      if (video && localStream) {
-                        video.srcObject = localStream;
-                      }
-                    }}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center space-y-4">
-                      <h2 style={{ fontSize: '2rem', fontWeight: 600 }}>
-                        Private Crypto Workshop
-                      </h2>
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                        {peerConnection ? 'WebRTC connection ready' : 'Initializing...'}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Stream info */}
-              <div className="card p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold">Private Viewing Mode</h3>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                      Your identity is protected via stealth address payment
+                  >
+                    <p className="text-sm font-semibold text-white">
+                      {cat}
                     </p>
                   </div>
-                  <div className="card px-3 py-2" style={{ borderColor: 'var(--success)' }}>
-                    <span style={{ color: 'var(--success)', fontSize: '13px', fontWeight: 600 }}>
-                      Anonymous
-                    </span>
-                  </div>
-                </div>
-
-                {/* WebRTC info */}
-                {peerConnection && (
-                  <div className="card p-4 space-y-2" style={{ backgroundColor: 'var(--elevated)' }}>
-                    <p style={{ color: 'var(--text-primary)', fontSize: '13px', fontWeight: 600 }}>
-                      WebRTC Active
-                    </p>
-                    <ul className="text-xs space-y-1" style={{ color: 'var(--text-secondary)' }}>
-                      <li>• RTCPeerConnection initialized</li>
-                      <li>• STUN servers configured</li>
-                      <li>• {localStream ? 'Local media stream active' : 'Ready for signaling'}</li>
-                      <li>• Connection state: {connectionState}</li>
-                    </ul>
-                    <p className="text-xs pt-2" style={{ color: 'var(--text-tertiary)' }}>
-                      Note: Full peer-to-peer requires signaling server (offer/answer exchange)
-                    </p>
-                  </div>
-                )}
-
-                <button
-                  onClick={() => {
-                    setViewState('browse');
-                    // Cleanup handled by useEffect
-                  }}
-                  className="btn btn-secondary"
-                >
-                  Leave Stream
-                </button>
+                ))}
               </div>
             </div>
           </div>
-        )}
-      </main>
+        </main>
+
+        {/* Inbox */}
+        <Inbox
+          messages={inboxMessages}
+          isOpen={inboxOpen}
+          onToggle={() => setInboxOpen(!inboxOpen)}
+          onUsePassword={handleUsePassword}
+        />
+
+        {/* ENS Identity Modal */}
+        <ENSIdentityModal
+          isOpen={ensModalOpen}
+          room={selectedRoom}
+          walletAddress={metamask.address || ''}
+          onClose={() => {
+            setEnsModalOpen(false);
+            setSelectedRoom(null);
+          }}
+          onVerified={handleENSVerified}
+        />
+
+        {/* Payment Modal */}
+        <PaymentModal
+          isOpen={paymentModalOpen}
+          room={selectedRoom}
+          ensName={currentEnsForPayment}
+          onClose={() => {
+            setPaymentModalOpen(false);
+            setSelectedRoom(null);
+          }}
+          onPay={handlePayment}
+          onSuccess={handlePaymentSuccess}
+        />
+      </div>
     </NetworkGuard>
   );
 }

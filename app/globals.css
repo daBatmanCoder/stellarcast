@@ -5,25 +5,26 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  /* Awwwards palette */
-  --base: #0A0A0C;
-  --surface: #141418;
-  --elevated: #1C1C22;
-  --border: rgba(255, 255, 255, 0.08);
+  /* Twitch-inspired dark palette */
+  --base: #0e0e10;
+  --surface: #18181b;
+  --elevated: #1f1f23;
+  --border: rgba(255, 255, 255, 0.1);
   
   /* Text */
-  --text-primary: #F5F5F7;
-  --text-secondary: #A1A1AA;
-  --text-tertiary: #6B6B76;
+  --text-primary: #efeff1;
+  --text-secondary: #adadb8;
+  --text-tertiary: #53535f;
   
-  /* Accent - violet primary */
-  --accent: #7C5CFF;
-  --accent-rgb: 124, 92, 255;
+  /* Accent - Twitch purple with Stellarcast violet energy */
+  --accent: #9146FF;
+  --accent-hover: #772ce8;
+  --accent-rgb: 145, 70, 255;
   
   /* Semantic */
-  --live: #FF3B5C;
-  --success: #34D399;
-  --warn: #F59E0B;
+  --live: #eb0400;
+  --success: #00f593;
+  --warn: #ffb900;
   
   /* Easing */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
