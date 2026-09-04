@@ -73,6 +73,27 @@ export default function Home() {
     setInboxMessages([]);
   };
 
+  // Initialize protocol adapter for live Sepolia mode
+  useEffect(() => {
+    const initProtocol = async () => {
+      const { setProtocolAdapter, LiveProtocolAdapter } = await import('@/lib/protocol/adapters');
+      const { KNOWN_CONTRACTS, SEPOLIA_CHAIN_ID } = await import('@/lib/blockchain/contracts');
+      
+      const contracts = KNOWN_CONTRACTS[SEPOLIA_CHAIN_ID];
+      if (contracts.registry && contracts.announcer) {
+        const liveAdapter = new LiveProtocolAdapter(
+          SEPOLIA_CHAIN_ID,
+          contracts.registry,
+          contracts.announcer
+        );
+        setProtocolAdapter(liveAdapter);
+        console.log('Initialized live protocol adapter for Sepolia');
+      }
+    };
+    
+    initProtocol();
+  }, []);
+
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem(SIDEBAR_KEY);
@@ -259,27 +280,75 @@ export default function Home() {
     const { getDemoHostMetaAddress } = await import('@/lib/demo/host-meta-addresses');
     const { getProtocolAdapter } = await import('@/lib/protocol/adapters');
 
+    // Get the protocol adapter (should be live mode for real payments)
+    const adapter = getProtocolAdapter();
+    
     let hostMeta;
+    let hostEnsName: string | null = null;
+    
+    // Try to resolve ENS and get stealth meta-address
     try {
-      const adapter = getProtocolAdapter();
+      // First try to get ENS name from hostDisplayName or reverse lookup
+      if (selectedRoom.hostDisplayName?.endsWith('.eth')) {
+        hostEnsName = selectedRoom.hostDisplayName;
+        // Verify it resolves to the host address
+        const resolvedAddr = await adapter.resolveENS(hostEnsName);
+        if (resolvedAddr?.toLowerCase() !== selectedRoom.host.toLowerCase()) {
+          console.warn('ENS name does not match host address');
+          hostEnsName = null;
+        }
+      }
+      
+      // Get stealth meta-address (adapter now checks ENS text records first)
       hostMeta = await adapter.getMetaAddress(selectedRoom.host);
-    } catch {
+    } catch (error) {
+      console.error('Failed to get host stealth meta-address:', error);
       hostMeta = null;
     }
 
     // Seed/demo rooms may not be registered on-chain — fall back for those only
     if (!hostMeta) {
       if (selectedRoom.isDemoSeed) {
+        console.log('Using demo meta-address for seed room');
         hostMeta = getDemoHostMetaAddress(selectedRoom.host);
       } else {
-        throw new Error('This host has not registered a stealth receiving address yet.');
+        throw new Error('This host has not registered a stealth receiving address yet. They need to set up receiving in Go Live first.');
       }
     }
 
+    // Generate stealth address from host's meta-address
     const stealthPayment = generateStealthAddress(hostMeta);
     const stealthAddressHex = '0x' + Buffer.from(stealthPayment.stealthAddress).toString('hex');
+    const ephemeralPubKeyHex = '0x' + Buffer.from(stealthPayment.ephemeralPublicKey).toString('hex');
 
+    console.log('Generated stealth payment:', {
+      stealthAddress: stealthAddressHex,
+      ephemeralPubKey: ephemeralPubKeyHex,
+      viewTag: stealthPayment.viewTag,
+    });
+
+    // Publish announcement to ERC-5564 contract (if live mode)
+    try {
+      if (adapter.mode === 'live') {
+        const announceTxHash = await adapter.publishAnnouncement(
+          BigInt(1), // scheme ID
+          stealthAddressHex,
+          ephemeralPubKeyHex,
+          '0x', // metadata (empty for now)
+          stealthPayment.viewTag
+        );
+        console.log('Published announcement:', announceTxHash);
+      } else {
+        console.log('Mock mode: skipping announcement publish');
+      }
+    } catch (error) {
+      console.error('Failed to publish announcement (continuing with payment):', error);
+      // Continue with payment even if announcement fails
+    }
+
+    // Send payment to the stealth address
     const txHash = await sendEthTransaction(metamask.address, stealthAddressHex, ENTRY_PRICE_ETH);
+    console.log('Payment sent:', txHash);
 
     await waitForTransactionReceipt(txHash);
 
@@ -345,10 +414,12 @@ export default function Home() {
     setGoLiveModalOpen(true);
   };
 
-  const handleStealthRegistered = async (encoded: string) => {
+  const handleStealthRegistered = async (encoded: string, slot?: number) => {
     setMetaAddress(encoded);
     setReceivingStatus('ready');
     setReceivingMessage('Receiving ready — viewers can pay your stealth meta-address.');
+    
+    console.log(`Registered stealth meta-address${slot ? ` in slot [${slot}]` : ''}:`, encoded);
 
     if (metamask.address && identity) {
       await refreshReceivingStatus(metamask.address, identity);
@@ -488,6 +559,7 @@ export default function Home() {
         walletAddress={metamask.address || ''}
         identity={identity}
         metaAddress={metaAddress}
+        ensName={verifiedEnsName}
         initialStatus={receivingStatus === 'keys-mismatch' ? 'keys-mismatch' : 'needs-setup'}
         statusMessage={receivingMessage}
         onClose={() => {

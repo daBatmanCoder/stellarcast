@@ -70,6 +70,47 @@ export function bytesToMetaAddress(hex: string): StealthMetaAddress | null {
   return null;
 }
 
+/**
+ * Parse ERC-5564 stealth meta-address from ENS text record format
+ * Format: st:eth:0x<66 hex chars spending pubkey><66 hex chars viewing pubkey>
+ * Example: st:eth:0x0341ce6167...633
+ */
+export function parseStealthMetaAddressFromENS(textRecord: string): StealthMetaAddress | null {
+  if (!textRecord || !textRecord.startsWith('st:eth:0x')) {
+    return null;
+  }
+
+  try {
+    // Remove 'st:eth:0x' prefix
+    const hexData = textRecord.slice(9);
+    
+    // Should be 132 hex chars (33 bytes spending + 33 bytes viewing, each as compressed pubkey)
+    if (hexData.length !== 132) {
+      console.error('Invalid stealth meta-address length:', hexData.length);
+      return null;
+    }
+
+    return {
+      spendingPublicKey: Buffer.from(hexData.slice(0, 66), 'hex'),
+      viewingPublicKey: Buffer.from(hexData.slice(66, 132), 'hex'),
+      scheme: 1,
+    };
+  } catch (error) {
+    console.error('Failed to parse stealth meta-address from ENS:', error);
+    return null;
+  }
+}
+
+/**
+ * Encode stealth meta-address to ENS text record format
+ * Format: st:eth:0x<spending pubkey hex><viewing pubkey hex>
+ */
+export function encodeStealthMetaAddressForENS(meta: StealthMetaAddress): string {
+  const spend = Buffer.from(meta.spendingPublicKey).toString('hex');
+  const view = Buffer.from(meta.viewingPublicKey).toString('hex');
+  return `st:eth:0x${spend}${view}`;
+}
+
 export function publicKeysMatch(a: StealthMetaAddress, b: StealthMetaAddress): boolean {
   const spendA = Buffer.from(a.spendingPublicKey).toString('hex');
   const spendB = Buffer.from(b.spendingPublicKey).toString('hex');

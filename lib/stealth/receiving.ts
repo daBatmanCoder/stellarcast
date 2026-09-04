@@ -70,10 +70,40 @@ export async function checkReceivingStatus(
 
 export async function registerReceivingMetaAddress(
   walletAddress: string,
-  identity: StealthIdentity
-): Promise<{ txHash: string; metaEncoded: string }> {
+  identity: StealthIdentity,
+  options?: { ensName?: string; targetSlot?: number }
+): Promise<{ txHash: string; metaEncoded: string; slot?: number }> {
   const meta = identityToMetaAddress(identity);
   const metaEncoded = encodeMetaAddress(meta);
+  
+  // If ENS name is provided, write to ENS text record (primary method)
+  if (options?.ensName) {
+    const { reverseResolveSepoliaENS, getNextStealthMetaSlot } = await import('@/lib/ens/resolver');
+    const { setSepoliaTextRecord } = await import('@/lib/ens/text-writer');
+    const { encodeStealthMetaAddressForENS } = await import('@/lib/blockchain/contracts');
+    
+    // Verify ownership
+    const resolvedAddress = await reverseResolveSepoliaENS(walletAddress);
+    if (!resolvedAddress || resolvedAddress.toLowerCase() !== options.ensName.toLowerCase()) {
+      console.warn('ENS name does not match wallet address, falling back to registry');
+    } else {
+      // Determine slot
+      const slot = options.targetSlot || (await getNextStealthMetaSlot(options.ensName));
+      const key = `stealth-meta-address[${slot}]`;
+      const value = encodeStealthMetaAddressForENS(meta);
+      
+      try {
+        const txHash = await setSepoliaTextRecord(options.ensName, key, value, walletAddress);
+        console.log(`Wrote stealth meta to ENS ${options.ensName} slot [${slot}]`);
+        return { txHash, metaEncoded, slot };
+      } catch (error) {
+        console.error('ENS text record write failed:', error);
+        throw error;
+      }
+    }
+  }
+  
+  // Fall back to ERC-6538 registry
   const adapter = getProtocolAdapter();
   const txHash = await adapter.registerStealthMetaAddress(walletAddress, meta);
   return { txHash, metaEncoded };
