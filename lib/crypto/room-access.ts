@@ -124,18 +124,38 @@ export function generateDemoRoomCredentials(roomTitle: string, hostEns: string):
 }
 
 /**
- * Combine encrypted data and IV into single hex string for storage
- * Format: <iv_hex>:<encrypted_hex>
+ * Combine encrypted data and IV into single hex string for Solidity bytes storage
+ * Format: 0x<iv_hex><encrypted_hex> (continuous hex, NO colon separator)
+ * 
+ * CRITICAL: Solidity bytes parameter requires valid continuous hex.
+ * DO NOT use colon-separated format like "iv:encrypted" - that breaks ABI encoding!
  */
 export function packageEncryptedData(encrypted: string, iv: string): string {
-  return `${iv}:${encrypted}`;
+  // Concatenate as continuous hex: iv || ciphertext
+  return `0x${iv}${encrypted}`;
 }
 
 /**
- * Unpack encrypted data from storage format
+ * Unpack encrypted data from Solidity bytes storage format
+ * Format: 0x<iv_hex><encrypted_hex>
+ * IV is always 12 bytes (24 hex chars) for AES-GCM
  */
 export function unpackEncryptedData(packed: string): { encrypted: string; iv: string } | null {
-  const parts = packed.split(':');
-  if (parts.length !== 2) return null;
-  return { iv: parts[0], encrypted: parts[1] };
+  try {
+    // Remove 0x prefix if present
+    const hex = packed.startsWith('0x') ? packed.slice(2) : packed;
+    
+    // Validate minimum length: 12 bytes IV + at least 1 byte ciphertext = 26 hex chars
+    if (hex.length < 26) {
+      return null;
+    }
+    
+    // Extract IV (first 12 bytes = 24 hex chars)
+    const iv = hex.slice(0, 24);
+    const encrypted = hex.slice(24);
+    
+    return { iv, encrypted };
+  } catch {
+    return null;
+  }
 }
