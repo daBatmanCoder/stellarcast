@@ -14,7 +14,7 @@ import { RoomView } from '@/components/RoomView';
 import { GoLiveModal } from '@/components/GoLiveModal';
 import { StealthSetupModal } from '@/components/StealthSetupModal';
 import { ViewStealthAddressModal } from '@/components/ViewStealthAddressModal';
-import { SEED_ROOMS, getCategoryStats, type LiveRoom } from '@/lib/data/seed-rooms';
+import { getCategoryStats, type LiveRoom } from '@/lib/data/seed-rooms';
 import type { StealthIdentity } from '@/lib/types/stealth';
 import { generateStealthAddress } from '@/lib/crypto/stealth';
 import { sendEthTransaction, waitForTransactionReceipt } from '@/lib/blockchain/transactions';
@@ -24,6 +24,7 @@ import {
   checkReceivingStatus,
   type ReceivingStatus,
 } from '@/lib/stealth/receiving';
+import { useRooms } from '@/lib/hooks/useRooms';
 
 const SIDEBAR_KEY = 'stellarcast-sidebar-collapsed';
 const ENTRY_PRICE_ETH = '0.001';
@@ -31,6 +32,7 @@ const ENTRY_PRICE_ETH = '0.001';
 export default function Home() {
   const metamask = useMetaMask();
   const previousAddressRef = useRef<string | null>(null);
+  const { rooms, loading: roomsLoading, reload: reloadRooms } = useRooms();
 
   const [identity, setIdentity] = useState<StealthIdentity | null>(null);
   const [metaAddress, setMetaAddress] = useState<string>('');
@@ -53,7 +55,7 @@ export default function Home() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const featuredRoom = SEED_ROOMS.find((r) => r.isFeatured) || SEED_ROOMS[0];
+  const featuredRoom = rooms.find((r) => r.isFeatured) || rooms[0] || null;
 
   const clearSessionForAccountChange = () => {
     setIdentity(null);
@@ -148,7 +150,7 @@ export default function Home() {
 
   const filteredRooms = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return SEED_ROOMS.filter((room) => {
+    return rooms.filter((room) => {
       if (categoryFilter && room.category !== categoryFilter) return false;
       if (!q) return true;
       return (
@@ -159,9 +161,9 @@ export default function Home() {
         room.host.toLowerCase().includes(q)
       );
     });
-  }, [searchQuery, categoryFilter]);
+  }, [rooms, searchQuery, categoryFilter]);
 
-  const categories = useMemo(() => getCategoryStats(SEED_ROOMS), []);
+  const categories = useMemo(() => getCategoryStats(rooms), [rooms]);
 
   const handleToggleSidebar = () => {
     setSidebarCollapsed((prev) => {
@@ -277,7 +279,6 @@ export default function Home() {
       throw new Error('Missing payment requirements');
     }
 
-    const { getDemoHostMetaAddress } = await import('@/lib/demo/host-meta-addresses');
     const { getProtocolAdapter } = await import('@/lib/protocol/adapters');
 
     // Get the protocol adapter (should be live mode for real payments)
@@ -306,14 +307,14 @@ export default function Home() {
       hostMeta = null;
     }
 
-    // Seed/demo rooms may not be registered on-chain — fall back for those only
+    // NFT rooms should have stealthMetaAddress in metadata; fall back to that
+    if (!hostMeta && selectedRoom.stealthMetaAddress) {
+      console.log('Using stealthMetaAddress from room NFT metadata');
+      hostMeta = selectedRoom.stealthMetaAddress;
+    }
+
     if (!hostMeta) {
-      if (selectedRoom.isDemoSeed) {
-        console.log('Using demo meta-address for seed room');
-        hostMeta = getDemoHostMetaAddress(selectedRoom.host);
-      } else {
-        throw new Error('This host has not registered a stealth receiving address yet. They need to set up receiving in Go Live first.');
-      }
+      throw new Error('This host has not registered a stealth receiving address yet. They need to set up receiving in Go Live first.');
     }
 
     // Generate stealth address from host's meta-address
@@ -361,30 +362,68 @@ export default function Home() {
   const handlePaymentSuccess = async (_txHash: string, sharedSecret: Uint8Array) => {
     if (!selectedRoom) return;
 
-    const { deriveAccessCredential } = await import('@/lib/crypto/credentials');
-    const roomCredential = deriveAccessCredential(sharedSecret);
+    try {
+      // Derive password from stealth payment shared secret
+      const { deriveRoomPassword, decryptRoomAccess, unpackEncryptedData } = 
+        await import('@/lib/crypto/room-access');
+      const { getEncryptedAccessData } = await import('@/lib/blockchain/rooms-contract');
+      
+      const password = await deriveRoomPassword(sharedSecret);
+      
+      // Extract room token ID from room.id (format: "room-{tokenId}")
+      const tokenId = parseInt(selectedRoom.id.replace('room-', ''));
+      
+      // Fetch encrypted access data from chain
+      const encryptedPackage = await getEncryptedAccessData(tokenId);
+      
+      if (!encryptedPackage) {
+        throw new Error('Room access data not found');
+      }
+      
+      // Unpack and decrypt
+      const unpacked = unpackEncryptedData(encryptedPackage);
+      if (!unpacked) {
+        throw new Error('Invalid encrypted data format');
+      }
+      
+      const accessCredentials = await decryptRoomAccess(unpacked.encrypted, unpacked.iv, password);
+      
+      if (!accessCredentials) {
+        throw new Error('Failed to decrypt room access');
+      }
+      
+      // Store decrypted credentials in inbox
+      const { deriveAccessCredential } = await import('@/lib/crypto/credentials');
+      const roomCredential = deriveAccessCredential(sharedSecret);
 
-    const message: InboxMessage = {
-      id: `msg-${Date.now()}`,
-      roomId: selectedRoom.id,
-      roomTitle: selectedRoom.title,
-      encryptedPassword: roomCredential,
-      timestamp: new Date().toISOString(),
-      isRead: false,
-    };
+      const message: InboxMessage = {
+        id: `msg-${Date.now()}`,
+        roomId: selectedRoom.id,
+        roomTitle: selectedRoom.title,
+        encryptedPassword: roomCredential,
+        timestamp: new Date().toISOString(),
+        isRead: false,
+      };
 
-    setInboxMessages((prev) => [message, ...prev]);
-    setPaymentModalOpen(false);
+      setInboxMessages((prev) => [message, ...prev]);
+      setPaymentModalOpen(false);
 
-    setTimeout(() => {
-      setInboxOpen(true);
-    }, 500);
+      setTimeout(() => {
+        setInboxOpen(true);
+      }, 500);
+      
+      console.log('Room access unlocked:', accessCredentials);
+    } catch (error) {
+      console.error('Failed to unlock room access:', error);
+      alert('Payment succeeded but failed to decrypt room access. See console for details.');
+      setPaymentModalOpen(false);
+    }
   };
 
   const handleUsePassword = (message: InboxMessage) => {
     setInboxMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, isRead: true } : m)));
 
-    const room = SEED_ROOMS.find((r) => r.id === message.roomId);
+    const room = rooms.find((r) => r.id === message.roomId);
     if (room) {
       setActiveRoom({
         room,
@@ -432,23 +471,70 @@ export default function Home() {
     }
   };
 
-  const handleStartStream = (title: string, category: string) => {
-    const hostRoom: LiveRoom = {
-      id: `host-${Date.now()}`,
-      host: metamask.address || '',
-      hostDisplayName: verifiedEnsName || `Host ${metamask.address?.slice(0, 6)}`,
-      title,
-      category,
-      viewers: 1,
-      tags: [category, 'Live'],
-      isFeatured: false,
-      isDemoSeed: false,
-      thumbnail: '',
-      isLive: true,
-    };
+  const handleStartStream = async (title: string, category: string) => {
+    if (!metamask.address || !verifiedEnsName || !metaAddress) {
+      console.error('Missing required data for room creation');
+      return;
+    }
 
-    setGoLiveModalOpen(false);
-    setActiveRoom({ room: hostRoom, credential: 'host-stream' });
+    try {
+      // Generate room access credentials (for hackathon: stub WebRTC data)
+      const { generateDemoRoomCredentials, encryptRoomAccess, deriveRoomPassword, packageEncryptedData } = 
+        await import('@/lib/crypto/room-access');
+      const { createRoomOnChain } = await import('@/lib/blockchain/rooms-contract');
+      
+      const roomCredentials = generateDemoRoomCredentials(title, verifiedEnsName);
+      
+      // Derive password from a random shared secret (in production, viewers derive this from stealth payment)
+      const randomSecret = crypto.getRandomValues(new Uint8Array(32));
+      const password = await deriveRoomPassword(randomSecret);
+      
+      // Encrypt access data
+      const { encrypted, iv } = await encryptRoomAccess(roomCredentials, password);
+      const encryptedData = packageEncryptedData(encrypted, iv);
+      
+      // Mint room NFT on-chain
+      const tags = [category, 'Live', 'Privacy'];
+      const { txHash } = await createRoomOnChain(metamask.address, {
+        hostEns: verifiedEnsName,
+        title,
+        category,
+        tags,
+        stealthMetaAddress: metaAddress,
+        thumbnail: '',
+        entryPrice: ENTRY_PRICE_ETH,
+        encryptedAccessData: encryptedData,
+      });
+
+      console.log('Room NFT minted:', txHash);
+
+      // Create local room for immediate host view
+      const hostRoom: LiveRoom = {
+        id: `room-${Date.now()}`,
+        host: metamask.address,
+        hostDisplayName: verifiedEnsName,
+        title,
+        category,
+        viewers: 1,
+        tags,
+        isFeatured: false,
+        thumbnail: '',
+        isLive: true,
+        createdAt: Date.now(),
+        stealthMetaAddress: metaAddress,
+      };
+
+      setGoLiveModalOpen(false);
+      setActiveRoom({ room: hostRoom, credential: 'host-stream' });
+      
+      // Reload rooms to show newly created room for other viewers
+      setTimeout(() => {
+        reloadRooms();
+      }, 3000);
+    } catch (error) {
+      console.error('Failed to create room:', error);
+      alert('Failed to create room. Make sure Room contract is deployed. See console for details.');
+    }
   };
 
   const handleSelectCategory = (category: CategoryItem) => {
@@ -467,7 +553,7 @@ export default function Home() {
   return (
     <NetworkGuard>
       <AppShell
-        rooms={SEED_ROOMS}
+        rooms={rooms}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={handleToggleSidebar}
         mobileDrawerOpen={mobileDrawerOpen}
@@ -494,11 +580,12 @@ export default function Home() {
         onDisconnect={handleDisconnect}
         inboxOpen={inboxOpen}
       >
-        {showFeatured && <FeaturedCarousel room={featuredRoom} onJoin={handleRoomSelect} />}
+        {showFeatured && featuredRoom && <FeaturedCarousel room={featuredRoom} onJoin={handleRoomSelect} />}
 
         <LiveGrid
           rooms={filteredRooms}
           onSelectRoom={handleRoomSelect}
+          loading={roomsLoading}
           title={
             categoryFilter
               ? `${categoryFilter}`
@@ -506,8 +593,8 @@ export default function Home() {
                 ? `Results for “${searchQuery}”`
                 : 'Live now'
           }
-          emptyTitle="No streams match"
-          emptyDescription="Adjust your search or browse all live channels."
+          emptyTitle={roomsLoading ? 'Loading rooms...' : 'No live rooms yet'}
+          emptyDescription={roomsLoading ? 'Fetching rooms from Sepolia...' : 'Be the first to Go Live and create a room!'}
           onClearFilters={clearFilters}
         />
 
