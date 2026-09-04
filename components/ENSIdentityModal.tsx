@@ -5,8 +5,17 @@ import { resolveSepoliaENS } from '@/lib/ens/resolver';
 import { requestENSOwnershipSignature, verifyENSOwnership } from '@/lib/ens/ownership';
 import { toChecksumAddress } from '@/lib/wallet/wallet-auth';
 import type { LiveRoom } from '@/lib/data/seed-rooms';
+import { ModalShell } from './ModalShell';
 
 type Step = 'input' | 'verifying' | 'signing' | 'verified';
+
+function CloseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 5L15 15M5 15L15 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  );
+}
 
 interface ENSIdentityModalProps {
   isOpen: boolean;
@@ -94,66 +103,135 @@ export function ENSIdentityModal({
 
   if (!isOpen || !room) return null;
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="w-full max-w-md rounded-xl p-6 space-y-6"
-        style={{
-          backgroundColor: 'var(--elevated)',
-          border: '1px solid var(--border)'
-        }}
-      >
-        {/* Header */}
-        <div>
-          <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-            Verify Your Identity
-          </h2>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Joining: <span style={{ color: 'var(--accent)' }}>{room.title}</span>
-          </p>
-        </div>
+  const allowClose = step === 'input';
 
+  return (
+    <ModalShell isOpen={isOpen} onClose={onClose} allowOverlayClose={allowClose}>
+      {/* Accent rail */}
+      <div style={{ 
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '4px',
+        backgroundColor: '#7C5CFF',
+        borderRadius: '24px 24px 0 0'
+      }} />
+
+      {/* Close button */}
+      {allowClose && (
+        <button
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            top: '14px',
+            right: '14px',
+            width: '32px',
+            height: '32px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '8px',
+            backgroundColor: 'transparent',
+            border: 'none',
+            color: 'rgba(255, 255, 255, 0.48)',
+            cursor: 'pointer',
+            transition: 'all 150ms ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.72)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent';
+            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.48)';
+          }}
+        >
+          <CloseIcon />
+        </button>
+      )}
+
+      {/* Header */}
+      <div style={{ padding: '24px 24px 0' }}>
+        <h2 style={{ 
+          fontSize: '22px', 
+          lineHeight: '28px', 
+          fontWeight: 700,
+          color: '#FFFFFF',
+          marginBottom: '8px'
+        }}>
+          Choose display name
+        </h2>
+        <p style={{ 
+          fontSize: '14px', 
+          lineHeight: '20px',
+          color: 'rgba(255, 255, 255, 0.64)'
+        }}>
+          Joining: <span style={{ color: '#7C5CFF', fontWeight: 600 }}>{room.title}</span>
+        </p>
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: '20px 24px 0' }}>
         {/* Step indicator */}
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-              step === 'input' || step === 'verifying' ? 'bg-[var(--accent)]' : 'bg-[var(--surface)]'
-            }`}
-            style={{ color: 'white' }}
-          >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            fontWeight: 700,
+            backgroundColor: step === 'input' || step === 'verifying' ? '#7C5CFF' : '#1C1C26',
+            color: 'white'
+          }}>
             1
           </div>
-          <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border)' }}></div>
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-              step === 'signing' || step === 'verified' ? 'bg-[var(--accent)]' : 'bg-[var(--surface)]'
-            }`}
-            style={{ color: 'white' }}
-          >
+          <div style={{ flex: 1, height: '2px', backgroundColor: 'rgba(255, 255, 255, 0.08)' }} />
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '12px',
+            fontWeight: 700,
+            backgroundColor: step === 'signing' || step === 'verified' ? '#7C5CFF' : '#1C1C26',
+            color: 'white'
+          }}>
             2
           </div>
-          <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border)' }}></div>
-          <div
-            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-              step === 'verified' ? 'bg-[var(--success)]' : 'bg-[var(--surface)]'
-            }`}
-            style={{ color: 'white' }}
-          >
+          <div style={{ flex: 1, height: '2px', backgroundColor: 'rgba(255, 255, 255, 0.08)' }} />
+          <div style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '14px',
+            fontWeight: 700,
+            backgroundColor: step === 'verified' ? '#3DDC97' : '#1C1C26',
+            color: 'white'
+          }}>
             ✓
           </div>
         </div>
 
-        {/* Content */}
+        {/* Input step */}
         {step === 'input' && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>
+          <>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 500,
+                color: 'rgba(255, 255, 255, 0.72)',
+                marginBottom: '8px'
+              }}>
                 Your ENS Name (Sepolia)
               </label>
               <input
@@ -162,107 +240,189 @@ export function ENSIdentityModal({
                 onChange={(e) => setEnsName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleVerifyENS()}
                 placeholder="name.eth"
-                className="w-full px-4 py-3 rounded-lg text-sm"
-                style={{
-                  backgroundColor: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text-primary)',
-                  outline: 'none'
-                }}
                 autoFocus
+                style={{
+                  width: '100%',
+                  height: '44px',
+                  padding: '0 14px',
+                  borderRadius: '12px',
+                  backgroundColor: '#1C1C26',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  color: '#FFFFFF',
+                  fontSize: '14px',
+                  outline: 'none',
+                  transition: 'all 150ms ease'
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = 'rgba(124, 92, 255, 0.4)';
+                  e.currentTarget.style.backgroundColor = '#1A1A24';
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
+                  e.currentTarget.style.backgroundColor = '#1C1C26';
+                }}
               />
             </div>
 
-            <div
-              className="p-3 rounded-lg text-xs space-y-1"
-              style={{
-                backgroundColor: 'var(--surface)',
-                color: 'var(--text-tertiary)'
-              }}
-            >
-              <p>• ENS must be registered on Sepolia</p>
-              <p>• Must resolve to your connected wallet</p>
-              <p>• You'll sign a message to prove ownership</p>
+            <div style={{
+              padding: '12px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(124, 92, 255, 0.08)',
+              marginBottom: '16px'
+            }}>
+              <div style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.56)' }}>
+                <div>• ENS must be registered on Sepolia</div>
+                <div>• Must resolve to your connected wallet</div>
+                <div>• You'll sign a message to prove ownership</div>
+              </div>
             </div>
 
             {error && (
-              <div
-                className="p-3 rounded-lg text-sm"
-                style={{
-                  backgroundColor: 'rgba(255,0,0,0.1)',
-                  border: '1px solid var(--live)',
-                  color: 'var(--live)'
-                }}
-              >
+              <div style={{
+                padding: '12px',
+                borderRadius: '12px',
+                backgroundColor: 'rgba(235, 4, 0, 0.1)',
+                border: '1px solid rgba(235, 4, 0, 0.3)',
+                color: '#EB0400',
+                fontSize: '14px',
+                marginBottom: '16px'
+              }}>
                 {error}
               </div>
             )}
-
-            <div className="flex gap-3">
-              <button
-                onClick={onClose}
-                className="flex-1 py-3 rounded-lg font-medium transition-colors"
-                style={{
-                  backgroundColor: 'var(--surface)',
-                  color: 'var(--text-secondary)'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleVerifyENS}
-                disabled={!ensName.trim()}
-                className="flex-1 py-3 rounded-lg font-semibold transition-colors disabled:opacity-50"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'white'
-                }}
-              >
-                Verify
-              </button>
-            </div>
-          </div>
+          </>
         )}
 
+        {/* Verifying/Signing state */}
         {(step === 'verifying' || step === 'signing') && (
-          <div className="flex flex-col items-center py-12 space-y-4">
-            <div
-              className="w-12 h-12 rounded-full"
-              style={{
-                border: '3px solid var(--surface)',
-                borderTopColor: 'var(--accent)',
-                animation: 'spin 1s linear infinite'
-              }}
-            ></div>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              {step === 'verifying' ? 'Verifying ENS...' : 'Check MetaMask to sign...'}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '32px 0',
+            gap: '16px'
+          }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '3px solid rgba(255, 255, 255, 0.1)',
+              borderTopColor: '#7C5CFF',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <p style={{
+              fontSize: '14px',
+              color: 'rgba(255, 255, 255, 0.64)'
+            }}>
+              {step === 'verifying' ? 'Verifying ENS...' : 'Confirm in wallet...'}
             </p>
           </div>
         )}
 
+        {/* Verified state */}
         {step === 'verified' && (
-          <div className="flex flex-col items-center py-12 space-y-4">
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center text-2xl"
-              style={{ backgroundColor: 'var(--success)', color: 'white' }}
-            >
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '32px 0',
+            gap: '12px'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#3DDC97',
+              color: 'white',
+              fontSize: '32px'
+            }}>
               ✓
             </div>
-            <p className="font-semibold" style={{ color: 'var(--success)' }}>
+            <p style={{
+              fontSize: '16px',
+              fontWeight: 600,
+              color: '#3DDC97'
+            }}>
               Identity Verified
             </p>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            <p style={{
+              fontSize: '14px',
+              color: 'rgba(255, 255, 255, 0.64)'
+            }}>
               Proceeding to payment...
             </p>
           </div>
         )}
       </div>
 
-      <style jsx>{`
+      {/* CTA stack */}
+      {step === 'input' && (
+        <div style={{ padding: '8px 24px 0' }}>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+            <button
+              onClick={onClose}
+              style={{
+                flex: 1,
+                height: '44px',
+                borderRadius: '14px',
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                color: 'rgba(255, 255, 255, 0.72)',
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 150ms ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              Skip for now
+            </button>
+            <button
+              onClick={handleVerifyENS}
+              disabled={!ensName.trim()}
+              style={{
+                flex: 1,
+                height: '48px',
+                borderRadius: '14px',
+                backgroundColor: '#7C5CFF',
+                border: 'none',
+                color: 'white',
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: !ensName.trim() ? 'not-allowed' : 'pointer',
+                opacity: !ensName.trim() ? 0.5 : 1,
+                transition: 'all 150ms ease'
+              }}
+              onMouseEnter={(e) => {
+                if (ensName.trim()) {
+                  e.currentTarget.style.backgroundColor = '#6B4DEE';
+                  e.currentTarget.style.transform = 'translateY(-1px)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#7C5CFF';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              Save name
+            </button>
+          </div>
+        </div>
+      )}
+
+      <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
       `}</style>
-    </div>
+    </ModalShell>
   );
 }

@@ -6,9 +6,35 @@ import { toChecksumAddress, authenticateWithWallet, reauthenticateWithWallet } f
 import { generateStealthIdentity, identityToMetaAddress, encodeMetaAddress } from '@/lib/crypto/identity';
 import { storeIdentity, loadIdentity, getAuthInfo, clearIdentity } from '@/lib/storage/identity-store';
 import type { StealthIdentity } from '@/lib/types/stealth';
+import { ModalShell } from './ModalShell';
 
 interface WalletConnectProps {
   onIdentityReady: (identity: StealthIdentity, metaAddress: string, ensName?: string) => void;
+}
+
+function CopyIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+      <path d="M3 10.5V3.5C3 2.67157 3.67157 2 4.5 2H10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 8.5L6 11.5L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 5L15 15M5 15L15 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  );
 }
 
 export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
@@ -16,7 +42,20 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string>('');
   const [warningMessage, setWarningMessage] = useState<string>('');
-  const [showCopied, setShowCopied] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyAddress = async () => {
+    if (!metamask.address) return;
+    await navigator.clipboard.writeText(toChecksumAddress(metamask.address));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDisconnect = () => {
+    metamask.disconnect();
+    setAuthError('');
+    setWarningMessage('');
+  };
 
   const handleConnect = async () => {
     const success = await metamask.connect();
@@ -84,297 +123,379 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
     }
   };
 
-  const handleDisconnect = () => {
-    metamask.disconnect();
-  };
-
-  const handleCopyAddress = async () => {
-    if (metamask.address) {
-      await navigator.clipboard.writeText(toChecksumAddress(metamask.address));
-      setShowCopied(true);
-      setTimeout(() => setShowCopied(false), 2000);
-    }
-  };
-
-  // Common modal wrapper
-  const ModalWrapper = ({ children }: { children: React.ReactNode }) => (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
-        backdropFilter: 'blur(8px)'
-      }}
-    >
-      <div
-        className="w-full animate-fade-in"
-        style={{
-          maxWidth: '440px'
-        }}
-      >
-        <div
-          className="rounded-2xl p-8 space-y-6"
-          style={{
-            backgroundColor: 'var(--elevated)',
-            border: '1px solid var(--border)',
-            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)'
-          }}
-        >
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-
-  // MetaMask not installed
   if (!metamask.isInstalled) {
     return (
-      <ModalWrapper>
-        <div className="text-center space-y-4">
-          <div
-            className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center font-bold text-white text-3xl"
-            style={{ backgroundColor: 'var(--accent)' }}
-          >
-            S
-          </div>
-          <div>
-            <h2 className="text-2xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-              MetaMask Required
-            </h2>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Install MetaMask to access private streaming
-            </p>
-          </div>
-        </div>
+      <ModalShell isOpen={true} allowOverlayClose={false}>
+        {/* Accent rail */}
+        <div style={{ 
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '4px',
+          backgroundColor: '#7C5CFF',
+          borderRadius: '24px 24px 0 0'
+        }} />
 
-        <a 
-          href="https://metamask.io/download/" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="block w-full rounded-xl text-center font-semibold transition-all"
-          style={{
-            padding: '14px 24px',
-            backgroundColor: 'var(--accent)',
-            color: 'white'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
-            e.currentTarget.style.transform = 'translateY(-1px)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'var(--accent)';
-            e.currentTarget.style.transform = 'translateY(0)';
-          }}
-        >
-          Install MetaMask
-        </a>
-      </ModalWrapper>
-    );
-  }
-
-  return (
-    <ModalWrapper>
-      {/* Header */}
-      <div className="text-center space-y-4">
-        <div
-          className="w-20 h-20 mx-auto rounded-2xl flex items-center justify-center font-bold text-white text-3xl"
-          style={{ backgroundColor: 'var(--accent)' }}
-        >
-          S
-        </div>
-        <div>
-          <h2 className="text-2xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-            Welcome to Stellarcast
+        {/* Header */}
+        <div style={{ padding: '24px 24px 0' }}>
+          <h2 style={{ 
+            fontSize: '22px', 
+            lineHeight: '28px', 
+            fontWeight: 700,
+            color: '#FFFFFF',
+            marginBottom: '8px'
+          }}>
+            MetaMask Required
           </h2>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Connect your wallet to access private streaming
+          <p style={{ 
+            fontSize: '14px', 
+            lineHeight: '20px',
+            color: 'rgba(255, 255, 255, 0.64)'
+          }}>
+            Install MetaMask to access private streaming
           </p>
         </div>
-      </div>
 
-      {/* Warning Message */}
-      {warningMessage && (
-        <div
-          className="p-4 rounded-xl text-sm"
-          style={{
-            backgroundColor: 'rgba(255, 185, 0, 0.08)',
-            border: '1px solid rgba(255, 185, 0, 0.2)',
-            color: 'var(--warn)'
-          }}
-        >
-          {warningMessage}
-        </div>
-      )}
-
-      {/* Error Message */}
-      {authError && (
-        <div
-          className="p-4 rounded-xl text-sm"
-          style={{
-            backgroundColor: 'rgba(235, 4, 0, 0.08)',
-            border: '1px solid rgba(235, 4, 0, 0.2)',
-            color: 'var(--live)'
-          }}
-        >
-          {authError}
-        </div>
-      )}
-
-      {/* Connected State */}
-      {metamask.isConnected && !isAuthenticating ? (
-        <div className="space-y-4">
-          {/* Address Display */}
-          <div
-            className="p-4 rounded-xl"
+        {/* Body */}
+        <div style={{ padding: '20px 24px 24px' }}>
+          <a 
+            href="https://metamask.io/download/" 
+            target="_blank" 
+            rel="noopener noreferrer"
             style={{
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)'
-            }}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <div
-                  className="w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: 'var(--success)' }}
-                ></div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium mb-1" style={{ color: 'var(--success)' }}>
-                    Connected
-                  </p>
-                  <p className="mono text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-                    {metamask.address ? 
-                      `${metamask.address.slice(0, 6)}...${metamask.address.slice(-4)}` : 
-                      ''
-                    }
-                  </p>
-                </div>
-              </div>
-              
-              {/* Copy Button */}
-              <button
-                onClick={handleCopyAddress}
-                className="flex-shrink-0 p-2 rounded-lg hover:bg-[var(--elevated)] transition-colors relative"
-                title="Copy address"
-              >
-                {showCopied ? (
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M13 4L6 11L3 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--success)' }}/>
-                  </svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.5" style={{ color: 'var(--text-tertiary)' }}/>
-                    <path d="M3 11V3C3 2.44772 3.44772 2 4 2H10" stroke="currentColor" strokeWidth="1.5" style={{ color: 'var(--text-tertiary)' }}/>
-                  </svg>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Primary CTA */}
-          <button
-            onClick={handleConnect}
-            className="w-full rounded-xl font-semibold transition-all"
-            style={{
-              padding: '14px 24px',
-              backgroundColor: 'var(--accent)',
-              color: 'white'
+              display: 'block',
+              width: '100%',
+              height: '48px',
+              borderRadius: '14px',
+              backgroundColor: '#7C5CFF',
+              color: 'white',
+              fontSize: '15px',
+              fontWeight: 600,
+              textAlign: 'center',
+              lineHeight: '48px',
+              textDecoration: 'none',
+              transition: 'all 150ms ease'
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
+              e.currentTarget.style.backgroundColor = '#6B4DEE';
               e.currentTarget.style.transform = 'translateY(-1px)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'var(--accent)';
+              e.currentTarget.style.backgroundColor = '#7C5CFF';
               e.currentTarget.style.transform = 'translateY(0)';
             }}
           >
-            Sign to Continue
-          </button>
-
-          {/* Secondary Action */}
-          <button
-            onClick={handleDisconnect}
-            className="w-full rounded-xl font-medium transition-colors text-sm"
-            style={{
-              padding: '12px 24px',
-              backgroundColor: 'transparent',
-              border: '1px solid var(--border)',
-              color: 'var(--text-secondary)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'var(--surface)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'transparent';
-            }}
-          >
-            Disconnect
-          </button>
-
-          {/* Disclaimer */}
-          <p className="text-xs text-center leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
-            Sign a message to create your private identity.<br/>
-            This does not grant access to your funds.
-          </p>
+            Install MetaMask
+          </a>
         </div>
-      ) : isAuthenticating ? (
-        /* Authenticating State */
-        <div className="flex flex-col items-center py-12 space-y-4">
-          <div
-            className="w-12 h-12 rounded-full"
-            style={{
-              border: '3px solid var(--surface)',
-              borderTopColor: 'var(--accent)',
-              animation: 'spin 1s linear infinite'
-            }}
-          ></div>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Check MetaMask...
-          </p>
-        </div>
-      ) : (
-        /* Connect Button */
+      </ModalShell>
+    );
+  }
+
+  const allowClose = !isAuthenticating && !metamask.isConnected;
+
+  return (
+    <ModalShell isOpen={true} allowOverlayClose={allowClose}>
+      {/* Accent rail */}
+      <div style={{ 
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '4px',
+        backgroundColor: '#7C5CFF',
+        borderRadius: '24px 24px 0 0'
+      }} />
+
+      {/* Close button */}
+      {allowClose && (
         <button
-          onClick={metamask.connect}
-          disabled={!metamask.isInstalled || metamask.isConnecting}
-          className="w-full rounded-xl font-semibold transition-all disabled:opacity-50"
+          onClick={handleDisconnect}
           style={{
-            padding: '14px 24px',
-            backgroundColor: 'var(--accent)',
-            color: 'white'
+            position: 'absolute',
+            top: '14px',
+            right: '14px',
+            width: '32px',
+            height: '32px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '8px',
+            backgroundColor: 'transparent',
+            border: 'none',
+            color: 'rgba(255, 255, 255, 0.48)',
+            cursor: 'pointer',
+            transition: 'all 150ms ease'
           }}
           onMouseEnter={(e) => {
-            if (!e.currentTarget.disabled) {
-              e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
-              e.currentTarget.style.transform = 'translateY(-1px)';
-            }
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.72)';
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.backgroundColor = 'var(--accent)';
-            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.backgroundColor = 'transparent';
+            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.48)';
           }}
         >
-          {metamask.isConnecting ? 'Connecting...' : 'Connect Wallet'}
+          <CloseIcon />
         </button>
       )}
 
-      <style jsx>{`
+      {/* Header */}
+      <div style={{ padding: '24px 24px 0' }}>
+        <h2 style={{ 
+          fontSize: '22px', 
+          lineHeight: '28px', 
+          fontWeight: 700,
+          color: '#FFFFFF',
+          marginBottom: '8px'
+        }}>
+          Welcome to Stellarcast
+        </h2>
+        <p style={{ 
+          fontSize: '14px', 
+          lineHeight: '20px',
+          color: 'rgba(255, 255, 255, 0.64)'
+        }}>
+          Connect your wallet to access private streaming
+        </p>
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: '20px 24px 0' }}>
+        {/* Messages */}
+        {warningMessage && (
+          <div style={{
+            padding: '12px',
+            borderRadius: '12px',
+            backgroundColor: 'rgba(255, 185, 0, 0.1)',
+            border: '1px solid rgba(255, 185, 0, 0.3)',
+            color: '#FFB900',
+            fontSize: '14px',
+            marginBottom: '16px'
+          }}>
+            {warningMessage}
+          </div>
+        )}
+
+        {authError && (
+          <div style={{
+            padding: '12px',
+            borderRadius: '12px',
+            backgroundColor: 'rgba(235, 4, 0, 0.1)',
+            border: '1px solid rgba(235, 4, 0, 0.3)',
+            color: '#EB0400',
+            fontSize: '14px',
+            marginBottom: '16px'
+          }}>
+            {authError}
+          </div>
+        )}
+
+        {/* Connected state */}
+        {metamask.isConnected && !isAuthenticating && (
+          <>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '10px 12px',
+              backgroundColor: '#1C1C26',
+              borderRadius: '12px',
+              marginBottom: '20px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: '#3DDC97'
+                }} />
+                <span style={{
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  color: '#3DDC97',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px'
+                }}>
+                  Connected
+                </span>
+              </div>
+              <div style={{
+                flex: 1,
+                fontSize: '13px',
+                fontFamily: 'JetBrains Mono, monospace',
+                color: 'rgba(255, 255, 255, 0.72)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}>
+                {toChecksumAddress(metamask.address!).slice(0, 6)}...{toChecksumAddress(metamask.address!).slice(-4)}
+              </div>
+              <button
+                onClick={handleCopyAddress}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '8px',
+                  backgroundColor: copied ? 'rgba(61, 220, 151, 0.12)' : 'rgba(255, 255, 255, 0.06)',
+                  border: 'none',
+                  color: copied ? '#3DDC97' : 'rgba(255, 255, 255, 0.56)',
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease'
+                }}
+                onMouseEnter={(e) => {
+                  if (!copied) {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!copied) {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.06)';
+                  }
+                }}
+                title={copied ? 'Copied!' : 'Copy address'}
+              >
+                {copied ? <CheckIcon /> : <CopyIcon />}
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Signing state */}
+        {isAuthenticating && (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '32px 0',
+            gap: '16px'
+          }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '3px solid rgba(255, 255, 255, 0.1)',
+              borderTopColor: '#7C5CFF',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <p style={{
+              fontSize: '14px',
+              color: 'rgba(255, 255, 255, 0.64)'
+            }}>
+              Confirm in wallet...
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* CTA stack */}
+      <div style={{ padding: '8px 24px 0' }}>
+        {metamask.isConnected && !isAuthenticating ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button
+              onClick={handleConnect}
+              style={{
+                width: '100%',
+                height: '48px',
+                borderRadius: '14px',
+                backgroundColor: '#7C5CFF',
+                border: 'none',
+                color: 'white',
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 150ms ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#6B4DEE';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#7C5CFF';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              Sign to Continue
+            </button>
+            <button
+              onClick={handleDisconnect}
+              style={{
+                width: '100%',
+                height: '44px',
+                borderRadius: '14px',
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                color: 'rgba(255, 255, 255, 0.72)',
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 150ms ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(255, 92, 122, 0.5)';
+                e.currentTarget.style.color = '#FF5C7A';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.72)';
+              }}
+            >
+              Disconnect
+            </button>
+          </div>
+        ) : !isAuthenticating ? (
+          <button
+            onClick={metamask.connect}
+            disabled={!metamask.isInstalled || metamask.isConnecting}
+            style={{
+              width: '100%',
+              height: '48px',
+              borderRadius: '14px',
+              backgroundColor: '#7C5CFF',
+              border: 'none',
+              color: 'white',
+              fontSize: '15px',
+              fontWeight: 600,
+              cursor: !metamask.isInstalled || metamask.isConnecting ? 'not-allowed' : 'pointer',
+              opacity: !metamask.isInstalled || metamask.isConnecting ? 0.5 : 1,
+              transition: 'all 150ms ease'
+            }}
+            onMouseEnter={(e) => {
+              if (!e.currentTarget.disabled) {
+                e.currentTarget.style.backgroundColor = '#6B4DEE';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#7C5CFF';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            {metamask.isConnecting ? 'Connecting...' : 'Connect Wallet'}
+          </button>
+        ) : null}
+      </div>
+
+      {/* Footnote */}
+      <div style={{ padding: '16px 24px 24px', textAlign: 'center' }}>
+        <p style={{
+          fontSize: '12px',
+          lineHeight: '16px',
+          color: 'rgba(255, 255, 255, 0.48)'
+        }}>
+          Sign a message to create your private identity.<br />This does not grant access to your funds.
+        </p>
+      </div>
+
+      <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
-        @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: scale(0.96);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1);
-          }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.2s ease-out;
-        }
       `}</style>
-    </ModalWrapper>
+    </ModalShell>
   );
 }

@@ -2,8 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import type { LiveRoom } from '@/lib/data/seed-rooms';
+import { ModalShell } from './ModalShell';
 
 type PaymentStatus = 'idle' | 'paying' | 'confirming' | 'success' | 'error';
+
+function CloseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 5L15 15M5 15L15 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    </svg>
+  );
+}
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -61,147 +70,187 @@ export function PaymentModal({
 
   if (!isOpen || !room) return null;
 
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-6"
-      style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget && status === 'idle') onClose();
-      }}
-    >
-      <div
-        className="w-full max-w-md rounded-xl p-6 space-y-6"
-        style={{
-          backgroundColor: 'var(--elevated)',
-          border: '1px solid var(--border)'
-        }}
-      >
-        {/* Header */}
-        <div>
-          <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-            Access Payment
-          </h2>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            Private payment via stealth address
-          </p>
-        </div>
+  const allowClose = status === 'idle';
 
+  return (
+    <ModalShell isOpen={isOpen} onClose={onClose} allowOverlayClose={allowClose}>
+      {/* Accent rail */}
+      <div style={{ 
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '4px',
+        backgroundColor: '#7C5CFF',
+        borderRadius: '24px 24px 0 0'
+      }} />
+
+      {/* Close button */}
+      {allowClose && (
+        <button
+          onClick={onClose}
+          style={{
+            position: 'absolute',
+            top: '14px',
+            right: '14px',
+            width: '32px',
+            height: '32px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '8px',
+            backgroundColor: 'transparent',
+            border: 'none',
+            color: 'rgba(255, 255, 255, 0.48)',
+            cursor: 'pointer',
+            transition: 'all 150ms ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.72)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = 'transparent';
+            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.48)';
+          }}
+        >
+          <CloseIcon />
+        </button>
+      )}
+
+      {/* Header */}
+      <div style={{ padding: '24px 24px 0' }}>
+        <h2 style={{ 
+          fontSize: '22px', 
+          lineHeight: '28px', 
+          fontWeight: 700,
+          color: '#FFFFFF',
+          marginBottom: '8px'
+        }}>
+          Unlock stream
+        </h2>
+        <p style={{ 
+          fontSize: '14px', 
+          lineHeight: '20px',
+          color: 'rgba(255, 255, 255, 0.64)'
+        }}>
+          Private payment via stealth address
+        </p>
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: '20px 24px 0' }}>
         {status === 'idle' && (
           <>
-            {/* Room info */}
-            <div
-              className="p-4 rounded-lg space-y-3"
-              style={{ backgroundColor: 'var(--surface)' }}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Room</span>
-                <span className="text-sm font-medium truncate ml-4" style={{ color: 'var(--text-primary)' }}>
-                  {room.title}
-                </span>
+            {/* Payment details */}
+            <div style={{
+              padding: '16px',
+              borderRadius: '12px',
+              backgroundColor: '#1C1C26',
+              marginBottom: '16px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Room</span>
+                <span style={{ fontSize: '13px', fontWeight: 500, color: '#FFFFFF' }}>{room.title}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Your Identity</span>
-                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>
-                  {ensName}
-                </span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Your Identity</span>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#7C5CFF' }}>{ensName}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Amount</span>
-                <span className="text-lg font-bold mono" style={{ color: 'var(--text-primary)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Amount</span>
+                <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: '#FFFFFF' }}>
                   0.01 ETH
                 </span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Network</span>
-                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  Sepolia
-                </span>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Network</span>
+                <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.72)' }}>Sepolia</span>
               </div>
             </div>
 
-            <div
-              className="p-3 rounded-lg text-xs space-y-1"
-              style={{
-                backgroundColor: 'rgba(145, 70, 255, 0.1)',
-                border: '1px solid rgba(145, 70, 255, 0.3)',
-                color: 'var(--text-secondary)'
-              }}
-            >
-              <p>• Payment sent to stealth address (ERC-5564)</p>
-              <p>• Room password delivered to your Inbox</p>
-              <p>• Private & non-custodial</p>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={onClose}
-                className="flex-1 py-3 rounded-lg font-medium transition-colors"
-                style={{
-                  backgroundColor: 'var(--surface)',
-                  color: 'var(--text-secondary)'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handlePay}
-                className="flex-1 py-3 rounded-lg font-semibold transition-colors"
-                style={{
-                  backgroundColor: 'var(--accent)',
-                  color: 'white'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--accent)';
-                }}
-              >
-                Pay 0.01 ETH
-              </button>
+            <div style={{
+              padding: '12px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(124, 92, 255, 0.08)',
+              marginBottom: '16px'
+            }}>
+              <div style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.56)' }}>
+                <div>• Payment sent to stealth address (ERC-5564)</div>
+                <div>• Room password delivered to your Inbox</div>
+                <div>• Private & non-custodial</div>
+              </div>
             </div>
           </>
         )}
 
+        {/* Paying state */}
         {status === 'paying' && (
-          <div className="flex flex-col items-center py-12 space-y-4">
-            <div
-              className="w-12 h-12 rounded-full"
-              style={{
-                border: '3px solid var(--surface)',
-                borderTopColor: 'var(--accent)',
-                animation: 'spin 1s linear infinite'
-              }}
-            ></div>
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              Check MetaMask to confirm transaction...
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '32px 0',
+            gap: '16px'
+          }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '3px solid rgba(255, 255, 255, 0.1)',
+              borderTopColor: '#7C5CFF',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <p style={{
+              fontSize: '14px',
+              color: 'rgba(255, 255, 255, 0.64)'
+            }}>
+              Confirm in wallet...
             </p>
           </div>
         )}
 
+        {/* Confirming state */}
         {status === 'confirming' && (
-          <div className="space-y-4">
-            <div className="flex flex-col items-center py-8 space-y-4">
-              <div
-                className="w-12 h-12 rounded-full"
-                style={{
-                  border: '3px solid var(--surface)',
-                  borderTopColor: 'var(--accent)',
-                  animation: 'spin 1s linear infinite'
-                }}
-              ></div>
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                Confirming on Sepolia...
-              </p>
-            </div>
-
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '32px 0',
+            gap: '16px'
+          }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '50%',
+              border: '3px solid rgba(255, 255, 255, 0.1)',
+              borderTopColor: '#7C5CFF',
+              animation: 'spin 1s linear infinite'
+            }} />
+            <p style={{
+              fontSize: '14px',
+              color: 'rgba(255, 255, 255, 0.64)',
+              marginBottom: '8px'
+            }}>
+              Confirming on Sepolia...
+            </p>
             {txHash && (
               <a
                 href={`https://sepolia.etherscan.io/tx/${txHash}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block text-center text-xs hover:underline"
-                style={{ color: 'var(--accent)' }}
+                style={{
+                  fontSize: '12px',
+                  color: '#7C5CFF',
+                  textDecoration: 'none',
+                  transition: 'opacity 150ms ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = '0.8';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = '1';
+                }}
               >
                 View on Etherscan →
               </a>
@@ -209,56 +258,152 @@ export function PaymentModal({
           </div>
         )}
 
+        {/* Success state */}
         {status === 'success' && (
-          <div className="flex flex-col items-center py-12 space-y-4">
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center text-2xl"
-              style={{ backgroundColor: 'var(--success)', color: 'white' }}
-            >
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '32px 0',
+            gap: '12px'
+          }}>
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#3DDC97',
+              color: 'white',
+              fontSize: '32px'
+            }}>
               ✓
             </div>
-            <p className="font-semibold" style={{ color: 'var(--success)' }}>
+            <p style={{
+              fontSize: '16px',
+              fontWeight: 600,
+              color: '#3DDC97'
+            }}>
               Payment Confirmed!
             </p>
-            <p className="text-sm text-center" style={{ color: 'var(--text-secondary)' }}>
+            <p style={{
+              fontSize: '14px',
+              color: 'rgba(255, 255, 255, 0.64)',
+              textAlign: 'center',
+              maxWidth: '280px'
+            }}>
               Check your Inbox for the encrypted room password
             </p>
           </div>
         )}
 
+        {/* Error state */}
         {status === 'error' && (
-          <div className="space-y-4">
-            <div
-              className="p-4 rounded-lg"
-              style={{
-                backgroundColor: 'rgba(255,0,0,0.1)',
-                border: '1px solid var(--live)'
-              }}
-            >
-              <p className="text-sm" style={{ color: 'var(--live)' }}>
-                {error}
-              </p>
-            </div>
-
-            <button
-              onClick={() => setStatus('idle')}
-              className="w-full py-3 rounded-lg font-medium transition-colors"
-              style={{
-                backgroundColor: 'var(--surface)',
-                color: 'var(--text-secondary)'
-              }}
-            >
-              Try Again
-            </button>
+          <div style={{
+            padding: '12px',
+            borderRadius: '12px',
+            backgroundColor: 'rgba(235, 4, 0, 0.1)',
+            border: '1px solid rgba(235, 4, 0, 0.3)',
+            color: '#EB0400',
+            fontSize: '14px',
+            marginBottom: '16px'
+          }}>
+            {error}
           </div>
         )}
       </div>
 
-      <style jsx>{`
+      {/* CTA stack */}
+      {status === 'idle' && (
+        <div style={{ padding: '8px 24px 0' }}>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+            <button
+              onClick={onClose}
+              style={{
+                flex: 1,
+                height: '44px',
+                borderRadius: '14px',
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                color: 'rgba(255, 255, 255, 0.72)',
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 150ms ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handlePay}
+              style={{
+                flex: 1,
+                height: '48px',
+                borderRadius: '14px',
+                backgroundColor: '#7C5CFF',
+                border: 'none',
+                color: 'white',
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 150ms ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#6B4DEE';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = '#7C5CFF';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              Pay 0.01 ETH
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status === 'error' && (
+        <div style={{ padding: '8px 24px 0' }}>
+          <button
+            onClick={() => setStatus('idle')}
+            style={{
+              width: '100%',
+              height: '44px',
+              borderRadius: '14px',
+              backgroundColor: 'transparent',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              color: 'rgba(255, 255, 255, 0.72)',
+              fontSize: '15px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 150ms ease',
+              marginBottom: '24px'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      )}
+
+      <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
       `}</style>
-    </div>
+    </ModalShell>
   );
 }
