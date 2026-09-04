@@ -244,7 +244,8 @@ export function PaymentModal({
               border: '1px solid rgba(0, 245, 147, 0.16)'
             }}>
               <div style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.64)' }}>
-                ✓ Access ticket stored in your Inbox after the ERC-5564 announcement + payment<br />
+                ✓ One MetaMask transaction: stealth announce + payment together<br />
+                ✓ Access ticket stored in your Inbox after that transaction<br />
                 ✓ Private, non-custodial, no middleman
               </div>
             </div>

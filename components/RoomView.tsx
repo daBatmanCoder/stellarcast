@@ -9,6 +9,7 @@ import { LiveBadge, Tag } from './ui/Badges';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import { IconChevronLeft, IconClose, IconPanel } from './ui/Icons';
+import { ModalShell } from './ModalShell';
 import { useAnnouncementScanner } from '@/hooks/useAnnouncementScanner';
 import type { MatchedPayment } from '@/lib/stealth/announcement-watcher';
 import { parseNativeEthAmount, parseStealthPaymentKind } from '@/lib/crypto/stealth';
@@ -19,7 +20,7 @@ const TIP_AMOUNTS = ['0.001', '0.005', '0.01'] as const;
 interface RoomViewProps {
   room: LiveRoom;
   roomCredential: string;
-  onLeave: () => void;
+  onLeave: () => void | Promise<void>;
   isHost?: boolean;
   hostIdentity?: StealthIdentity | null;
   onPaymentDetected?: (payment: MatchedPayment) => void;
@@ -41,6 +42,10 @@ export function RoomView({
   const [tipping, setTipping] = useState(false);
   const [tipError, setTipError] = useState('');
   const [tipDone, setTipDone] = useState('');
+  const [endConfirmOpen, setEndConfirmOpen] = useState(false);
+  const [endConfirmText, setEndConfirmText] = useState('');
+  const [ending, setEnding] = useState(false);
+  const [endError, setEndError] = useState('');
 
   const scanner = useAnnouncementScanner({
     identity: isHost ? hostIdentity : null,
@@ -59,8 +64,41 @@ export function RoomView({
     },
   });
 
+  const confirmWord = room.title.trim() || 'END';
+  const titleMatches = endConfirmText.trim().toLowerCase() === confirmWord.toLowerCase();
+
+  const closeEndConfirm = () => {
+    if (ending) return;
+    setEndConfirmOpen(false);
+    setEndConfirmText('');
+    setEndError('');
+  };
+
   const handleLeave = () => {
-    onLeave();
+    if (isHost && room.isLive) {
+      setEndConfirmOpen(true);
+      setEndConfirmText('');
+      setEndError('');
+      return;
+    }
+    void onLeave();
+  };
+
+  const handleConfirmEnd = async () => {
+    if (!titleMatches || ending) return;
+    setEnding(true);
+    setEndError('');
+    try {
+      await onLeave();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '';
+      if (message.toLowerCase().includes('reject') || message.toLowerCase().includes('denied')) {
+        setEnding(false);
+        return;
+      }
+      setEndError(message || 'Could not burn the room NFT. The listing may still be live.');
+      setEnding(false);
+    }
   };
 
   const hostLabel = room.hostDisplayName || truncateAddress(room.host);
@@ -378,7 +416,7 @@ export function RoomView({
                         <div>
                           <p style={{ fontSize: 13, fontWeight: 600, margin: '4px 0 8px' }}>Tip the creator</p>
                           <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', lineHeight: 1.4 }}>
-                            Private stealth payment. Only the creator sees it. Does not unlock a second ticket.
+                            One MetaMask transaction. Only the creator sees it. Does not unlock a second ticket.
                           </p>
                           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                             {TIP_AMOUNTS.map((amount) => (
@@ -421,6 +459,95 @@ export function RoomView({
           )}
         </aside>
       </div>
+
+      <ModalShell
+        isOpen={endConfirmOpen}
+        onClose={closeEndConfirm}
+        allowOverlayClose={!ending}
+        mobileBottomSheet
+      >
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 4,
+            backgroundColor: 'var(--live)',
+            borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0',
+          }}
+        />
+        <div style={{ padding: '24px 24px 0' }}>
+          <h2
+            style={{
+              fontSize: 22,
+              lineHeight: '28px',
+              fontWeight: 700,
+              color: 'var(--text-primary)',
+              margin: '0 0 8px',
+            }}
+          >
+            End livestream
+          </h2>
+          <p style={{ fontSize: 14, lineHeight: '20px', color: 'var(--text-secondary)', margin: 0 }}>
+            Burns <strong style={{ color: 'var(--text-primary)' }}>{room.title}</strong> in one
+            transaction. It leaves Browse and cannot be reopened.
+          </p>
+        </div>
+        <div style={{ padding: '20px 24px 24px' }}>
+          <label
+            htmlFor="end-stream-confirm"
+            style={{
+              display: 'block',
+              fontSize: 13,
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              marginBottom: 8,
+            }}
+          >
+            Type {confirmWord} to confirm
+          </label>
+          <input
+            id="end-stream-confirm"
+            type="text"
+            value={endConfirmText}
+            onChange={(event) => setEndConfirmText(event.target.value)}
+            placeholder={confirmWord}
+            disabled={ending}
+            autoComplete="off"
+            style={{
+              width: '100%',
+              padding: 12,
+              borderRadius: 12,
+              backgroundColor: 'rgba(255, 255, 255, 0.05)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              color: 'var(--text-primary)',
+              fontSize: 14,
+              fontWeight: 600,
+              outline: 'none',
+              marginBottom: 16,
+            }}
+          />
+          {endError ? (
+            <p style={{ fontSize: 12, color: 'var(--live)', margin: '0 0 16px', lineHeight: 1.4 }}>
+              {endError}
+            </p>
+          ) : null}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Button variant="secondary" fullWidth onClick={closeEndConfirm} disabled={ending}>
+              Keep streaming
+            </Button>
+            <Button
+              variant="live"
+              fullWidth
+              onClick={() => void handleConfirmEnd()}
+              disabled={!titleMatches || ending}
+            >
+              {ending ? 'Ending stream…' : 'End stream'}
+            </Button>
+          </div>
+        </div>
+      </ModalShell>
     </div>
   );
 }

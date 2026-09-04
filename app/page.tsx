@@ -13,6 +13,8 @@ import { WalletConnect } from '@/components/WalletConnect';
 import { RoomView } from '@/components/RoomView';
 import { GoLiveModal } from '@/components/GoLiveModal';
 import { ViewStealthAddressModal } from '@/components/ViewStealthAddressModal';
+import { ModalShell } from '@/components/ModalShell';
+import { Button } from '@/components/ui/Button';
 import { getCategoryStats, type LiveRoom } from '@/lib/data/seed-rooms';
 import type { StealthIdentity } from '@/lib/types/stealth';
 import {
@@ -21,7 +23,6 @@ import {
   entryPriceToWei,
   type StealthPaymentKind,
 } from '@/lib/crypto/stealth';
-import { sendEthTransaction, waitForTransactionReceipt } from '@/lib/blockchain/transactions';
 import { getENSVerification, storeENSVerification } from '@/lib/storage/ens-store';
 import type { CategoryItem } from '@/components/ui/CategoryCard';
 import {
@@ -75,6 +76,7 @@ export default function Home() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [hostRooms, setHostRooms] = useState<LiveRoom[]>([]);
+  const [appNotice, setAppNotice] = useState<{ title: string; body: string } | null>(null);
   const identityRef = useRef<StealthIdentity | null>(null);
 
   const ticketToInbox = (ticket: AccessTicket): InboxMessage => ({
@@ -102,6 +104,7 @@ export default function Home() {
     setInboxOpen(false);
     setInboxMessages([]);
     setHostRooms([]);
+    setAppNotice(null);
     identityRef.current = null;
     clearSessionWrapKey();
   };
@@ -373,19 +376,18 @@ export default function Home() {
       stealthPayment.sharedSecret
     );
 
-    if (adapter.mode === 'live') {
-      const announceTxHash = await adapter.publishAnnouncement(
-        BigInt(1),
-        stealthAddressHex,
-        ephemeralPubKeyHex,
-        metadata,
-        stealthPayment.viewTag
-      );
-      await waitForTransactionReceipt(announceTxHash);
+    if (adapter.mode !== 'live') {
+      throw new Error('Live Sepolia adapter is required to pay');
     }
 
-    const txHash = await sendEthTransaction(fromAddress, stealthAddressHex, amountEth);
-    await waitForTransactionReceipt(txHash);
+    const { payStealthOnChain } = await import('@/lib/blockchain/rooms-contract');
+    const txHash = await payStealthOnChain(
+      fromAddress,
+      stealthAddressHex,
+      ephemeralPubKeyHex,
+      metadata,
+      entryPriceToWei(amountEth)
+    );
 
     return {
       txHash,
@@ -479,7 +481,10 @@ export default function Home() {
       }
     }
 
-    window.alert('That room is no longer in Browse. The ticket is still saved if the host goes live again.');
+    setAppNotice({
+      title: 'Room is offline',
+      body: 'That room is no longer in Browse. The ticket is still saved if the host goes live again.',
+    });
   };
 
   const handleLeaveRoom = async () => {
@@ -487,11 +492,6 @@ export default function Home() {
     if (!session) return;
 
     if (session.credential === 'host-stream' && metamask.address && session.room.isLive) {
-      const confirmed = window.confirm(
-        'End this livestream? This burns the room NFT in one transaction. It leaves Browse and cannot be reopened.'
-      );
-      if (!confirmed) return;
-
       const { parseRoomTokenId, endRoomOnChain } = await import('@/lib/blockchain/rooms-contract');
       const tokenId = parseRoomTokenId(session.room.id);
       if (tokenId === undefined) {
@@ -521,7 +521,7 @@ export default function Home() {
         if (message.toLowerCase().includes('reject') || message.toLowerCase().includes('denied')) {
           return;
         }
-        window.alert(message || 'Could not burn the room NFT. The listing may still be live.');
+        throw new Error(message || 'Could not burn the room NFT. The listing may still be live.');
       }
       return;
     }
@@ -725,6 +725,28 @@ export default function Home() {
         receivingStatus={receivingStatus}
         onClose={() => setViewStealthOpen(false)}
       />
+
+      <ModalShell isOpen={!!appNotice} onClose={() => setAppNotice(null)} mobileBottomSheet>
+        <div style={{ padding: '24px 24px 24px' }}>
+          <h2
+            style={{
+              fontSize: 22,
+              lineHeight: '28px',
+              fontWeight: 700,
+              color: 'var(--text-primary)',
+              margin: '0 0 8px',
+            }}
+          >
+            {appNotice?.title}
+          </h2>
+          <p style={{ fontSize: 14, lineHeight: '20px', color: 'var(--text-secondary)', margin: '0 0 20px' }}>
+            {appNotice?.body}
+          </p>
+          <Button variant="primary" fullWidth onClick={() => setAppNotice(null)}>
+            Got it
+          </Button>
+        </div>
+      </ModalShell>
 
       {needsWalletConnect && (
         <WalletConnect

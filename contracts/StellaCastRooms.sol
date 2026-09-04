@@ -199,3 +199,38 @@ contract StellaCastRooms {
         delete liveIndexPlusOne[tokenId];
     }
 }
+
+interface IERC5564Announcer {
+    function announce(
+        uint256 schemeId,
+        address stealthAddress,
+        bytes calldata ephemeralPubKey,
+        bytes calldata metadata
+    ) external;
+}
+
+/**
+ * One viewer transaction: ERC-5564 announce + ETH to the stealth address.
+ * Used for both room access and tips.
+ */
+contract StealthPay {
+    IERC5564Announcer public immutable announcer;
+
+    constructor(address announcer_) {
+        require(announcer_ != address(0), "Announcer required");
+        announcer = IERC5564Announcer(announcer_);
+    }
+
+    function pay(
+        uint256 schemeId,
+        address stealthAddress,
+        bytes calldata ephemeralPubKey,
+        bytes calldata metadata
+    ) external payable {
+        require(msg.value > 0, "Payment required");
+        require(stealthAddress != address(0), "Stealth address required");
+        announcer.announce(schemeId, stealthAddress, ephemeralPubKey, metadata);
+        (bool sent, ) = stealthAddress.call{value: msg.value}("");
+        require(sent, "Stealth transfer failed");
+    }
+}

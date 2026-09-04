@@ -18,6 +18,17 @@ import type { LiveRoom } from '@/lib/storage/rooms-store';
 export const ROOM_CONTRACT_ADDRESS = '0x938B1E2E531817EACb8555F8Fc3a2e868e4FB3a5';
 const ROOM_DEPLOY_BLOCK = 11_633_926;
 
+/**
+ * Bundles ERC-5564 announce + stealth ETH in one tx (join and tip).
+ * Deploy tx: 0x0f5e05156a3f0d46dab2c6bae343f8d1c2634376240a05e4c0dd138d05f82ab7
+ * Deploy block: 11634041
+ */
+export const STEALTH_PAY_ADDRESS = '0xC213080B67fC3AE550C2800DADEc85AaDD01a3F9';
+
+const STEALTH_PAY_ABI = parseAbi([
+  'function pay(uint256 schemeId, address stealthAddress, bytes ephemeralPubKey, bytes metadata) payable',
+]);
+
 const ROOMS_ABI = parseAbi([
   'function createRoom(string hostEns, string title, string category, string tags, string stealthMetaAddress, string thumbnail, uint256 entryPrice, bytes encryptedAccessData) returns (uint256)',
   'function endRoom(uint256 tokenId)',
@@ -122,6 +133,31 @@ export async function endRoomOnChain(
   });
 
   const txHash = await sendContractTransaction(fromAddress, ROOM_CONTRACT_ADDRESS, data);
+  await waitForTransactionReceipt(txHash);
+  return txHash;
+}
+
+export async function payStealthOnChain(
+  fromAddress: string,
+  stealthAddress: string,
+  ephemeralPublicKey: string,
+  metadata: string,
+  amountWei: bigint
+): Promise<string> {
+  const ephem = (ephemeralPublicKey.startsWith('0x') ? ephemeralPublicKey : `0x${ephemeralPublicKey}`) as Hex;
+  const meta = (metadata.startsWith('0x') ? metadata : `0x${metadata}`) as Hex;
+  const data = encodeFunctionData({
+    abi: STEALTH_PAY_ABI,
+    functionName: 'pay',
+    args: [BigInt(1), stealthAddress as `0x${string}`, ephem, meta],
+  });
+
+  const txHash = await sendContractTransaction(
+    fromAddress,
+    STEALTH_PAY_ADDRESS,
+    data,
+    `0x${amountWei.toString(16)}`
+  );
   await waitForTransactionReceipt(txHash);
   return txHash;
 }
