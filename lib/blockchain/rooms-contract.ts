@@ -10,15 +10,16 @@ import type { LiveRoom } from '@/lib/storage/rooms-store';
 /**
  * Deployed StellaCast Rooms contract address on Sepolia
  * 
- * DEPLOYMENT STATUS: REDEPLOY REQUIRED
- * The live Sepolia address below is the previous registry (status flip only).
- * endRoom / live indexes / tombstones exist only after you deploy
- * contracts/StellaCastRooms.sol and replace this address.
- * 
+ * DEPLOYMENT STATUS: DEPLOYED
+ *
+ * Contract: 0x938B1E2E531817EACb8555F8Fc3a2e868e4FB3a5
+ * Deploy Tx: 0x4ebeb0c23d04587691d8bda3d2779914d6a52586fc45bc6e58a7d8d088412f73
+ * Deployer: 0xD0a2b03fCCAD184B9eec286FeFA34301E9436206
+ * Deploy block: 11633926
  * Previous: 0x4D34702b7967272adba2A361766cC461CF72f60a
  */
-export const ROOM_CONTRACT_ADDRESS = '0x4D34702b7967272adba2A361766cC461CF72f60a';
-const ROOM_DEPLOY_BLOCK = 11_633_265;
+export const ROOM_CONTRACT_ADDRESS = '0x938B1E2E531817EACb8555F8Fc3a2e868e4FB3a5';
+const ROOM_DEPLOY_BLOCK = 11_633_926;
 
 const ROOMS_ABI = parseAbi([
   'function createRoom(string hostEns, string title, string category, string tags, string stealthMetaAddress, string thumbnail, uint256 entryPrice, bytes encryptedAccessData) returns (uint256)',

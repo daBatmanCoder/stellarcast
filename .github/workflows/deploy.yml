@@ -7,46 +7,56 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        
+        uses: actions/checkout@v5
+
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
-          
+          node-version: '24'
+
       - name: Install dependencies
         run: npm install
-        
+
       - name: Build static site
         run: npm run build
         env:
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
-          
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./out
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish gh-pages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          touch out/.nojekyll
+          cp out/index.html out/404.html
+          git -C out init
+          git -C out checkout --orphan gh-pages
+          git -C out add -A
+          git -C out -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "Deploy GitHub Pages"
+          git -C out push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+      - name: Point Pages at gh-pages
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PUT "/repos/${GITHUB_REPOSITORY}/pages" \
+            -f build_type=legacy \
+            -f 'source[branch]=gh-pages' \
+            -f 'source[path]=/' \
+          || gh api --method POST "/repos/${GITHUB_REPOSITORY}/pages" \
+            -f build_type=legacy \
+            -f 'source[branch]=gh-pages' \
+            -f 'source[path]=/' \
+          || true
