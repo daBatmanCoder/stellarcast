@@ -7,11 +7,12 @@ interface RoomViewProps {
   room: LiveRoom;
   roomCredential: string;
   onLeave: () => void;
+  isHost?: boolean;
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'failed';
 
-export function RoomView({ room, roomCredential, onLeave }: RoomViewProps) {
+export function RoomView({ room, roomCredential, onLeave, isHost = false }: RoomViewProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);

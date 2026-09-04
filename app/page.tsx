@@ -73,16 +73,19 @@ export default function Home() {
   const handleRoomSelect = (room: LiveRoom) => {
     if (!metamask.isConnected) {
       setNeedsWalletConnect(true);
+      setSelectedRoom(room);
       return;
     }
 
     if (!identity) {
       setNeedsWalletConnect(true);
+      setSelectedRoom(room);
       return;
     }
 
+    // Viewer flow: skip ENS, go directly to payment
     setSelectedRoom(room);
-    setEnsModalOpen(true);
+    setPaymentModalOpen(true);
   };
 
   const handleENSVerified = async (ensName: string, signature: string, message: string) => {
@@ -328,7 +331,7 @@ export default function Home() {
         <PaymentModal
           isOpen={paymentModalOpen}
           room={selectedRoom}
-          ensName={currentEnsForPayment}
+          ensName={verifiedEnsName || undefined}
           onClose={() => {
             setPaymentModalOpen(false);
             setSelectedRoom(null);
@@ -343,6 +346,7 @@ export default function Home() {
             room={activeRoom.room}
             roomCredential={activeRoom.credential}
             onLeave={handleLeaveRoom}
+            isHost={activeRoom.credential === 'host-stream'}
           />
         )}
 
