@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LiveRoom } from '@/lib/data/seed-rooms';
 import type { StealthIdentity } from '@/lib/types/stealth';
 import { formatViewerCount, hostInitials, truncateAddress } from '@/lib/utils/asset';
@@ -14,6 +14,7 @@ import { useAnnouncementScanner } from '@/hooks/useAnnouncementScanner';
 import type { MatchedPayment } from '@/lib/stealth/announcement-watcher';
 import { parseNativeEthAmount, parseStealthPaymentKind } from '@/lib/crypto/stealth';
 import { formatEther } from 'viem';
+import { joinHostBroadcast, startHostBroadcast } from '@/lib/webrtc/video-stream';
 
 const TIP_AMOUNTS = ['0.001', '0.005', '0.01'] as const;
 
@@ -46,6 +47,10 @@ export function RoomView({
   const [endConfirmText, setEndConfirmText] = useState('');
   const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState('');
+  const [streamStatus, setStreamStatus] = useState('');
+  const [streamError, setStreamError] = useState('');
+  const [hasStream, setHasStream] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const scanner = useAnnouncementScanner({
     identity: isHost ? hostIdentity : null,
@@ -63,6 +68,54 @@ export function RoomView({
       onPaymentDetected?.(payment);
     },
   });
+
+  useEffect(() => {
+    if (!room.isLive) {
+      setHasStream(false);
+      setStreamStatus('');
+      return;
+    }
+
+    let cancelled = false;
+    let destroy = () => {};
+
+    const start = async () => {
+      setStreamError('');
+      setHasStream(false);
+      setStreamStatus(isHost ? 'Starting camera…' : 'Connecting to host…');
+      try {
+        const session = isHost
+          ? await startHostBroadcast(room.id)
+          : await joinHostBroadcast(room.id);
+        if (cancelled) {
+          session.destroy();
+          return;
+        }
+        destroy = session.destroy;
+        if (videoRef.current) {
+          videoRef.current.srcObject = session.stream;
+          videoRef.current.muted = isHost;
+          await videoRef.current.play().catch(() => undefined);
+        }
+        setHasStream(true);
+        setStreamStatus(isHost ? 'Camera live' : 'Watching live');
+      } catch (error) {
+        if (cancelled) return;
+        setHasStream(false);
+        setStreamStatus('');
+        setStreamError(error instanceof Error ? error.message : 'Camera connection failed');
+      }
+    };
+
+    void start();
+    return () => {
+      cancelled = true;
+      destroy();
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    };
+  }, [room.id, room.isLive, isHost]);
 
   const confirmWord = room.title.trim() || 'END';
   const titleMatches = endConfirmText.trim().toLowerCase() === confirmWord.toLowerCase();
@@ -267,20 +320,56 @@ export function RoomView({
                 )}
               </div>
             )}
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ textAlign: 'center', padding: 24, maxWidth: 400 }}>
-                <p style={{ color: 'var(--text-primary)', fontSize: 16, fontWeight: 600, margin: 0 }}>
-                  {room.isLive ? 'Video comes later' : 'Stream ended'}
-                </p>
-                <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '8px 0 0', lineHeight: 1.4 }}>
-                  {isHost
-                    ? 'Use the host dashboard for paid joins and tips. Camera and WebRTC stay off until payments are solid.'
-                    : room.isLive
-                      ? 'You are in the paid room. Tip the creator from the session panel. Livestream video is not on yet.'
-                      : 'The host closed this room. It left Browse and cannot be reopened.'}
-                </p>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted={isHost}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                background: '#000',
+                transform: isHost ? 'scaleX(-1)' : undefined,
+              }}
+            />
+            {!hasStream && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center', padding: 24, maxWidth: 400 }}>
+                  <p style={{ color: 'var(--text-primary)', fontSize: 16, fontWeight: 600, margin: 0 }}>
+                    {room.isLive ? streamStatus || (isHost ? 'Starting camera…' : 'Connecting…') : 'Stream ended'}
+                  </p>
+                  <p style={{ color: streamError ? 'var(--live)' : 'var(--text-secondary)', fontSize: 13, margin: '8px 0 0', lineHeight: 1.4 }}>
+                    {streamError
+                      || (isHost
+                        ? 'Allow camera and microphone. Viewers in this room will see this feed.'
+                        : room.isLive
+                          ? 'Waiting for the host camera. Stay in the room — this reconnects when they go live.'
+                          : 'The host closed this room. It left Browse and cannot be reopened.')}
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
+            {hasStream && streamStatus ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 16,
+                  left: 16,
+                  zIndex: 12,
+                  padding: '4px 8px',
+                  borderRadius: 999,
+                  background: 'rgba(0, 0, 0, 0.55)',
+                  color: '#fff',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                {streamStatus}
+              </div>
+            ) : null}
             {!isHost && !room.isLive ? (
               <div
                 role="alertdialog"

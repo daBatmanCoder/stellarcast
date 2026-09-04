@@ -16,7 +16,7 @@ import type { LiveRoom } from '@/lib/storage/rooms-store';
  * Abandoned: 0x4D34702b7967272adba2A361766cC461CF72f60a
  */
 export const ROOM_CONTRACT_ADDRESS = '0x938B1E2E531817EACb8555F8Fc3a2e868e4FB3a5';
-const ROOM_DEPLOY_BLOCK = 11_633_926;
+export const ROOM_DEPLOY_BLOCK = 11_633_926;
 
 /**
  * Bundles ERC-5564 announce + stealth ETH in one tx (join and tip).

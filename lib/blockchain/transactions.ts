@@ -145,6 +145,53 @@ export async function sendContractTransaction(
 
 export const SEPOLIA_PUBLIC_RPC = 'https://ethereum-sepolia-rpc.publicnode.com';
 
+export async function getNativeBalance(address: string): Promise<bigint> {
+  const hex = await publicRpc('eth_getBalance', [address, 'latest']) as string;
+  return BigInt(hex);
+}
+
+export async function sweepStealthEth(
+  stealthPrivateKey: Uint8Array,
+  to: `0x${string}`
+): Promise<string> {
+  const { createPublicClient, createWalletClient, http } = await import('viem');
+  const { privateKeyToAccount } = await import('viem/accounts');
+  const { sepolia } = await import('viem/chains');
+
+  const key = (`0x${Buffer.from(stealthPrivateKey).toString('hex')}`) as `0x${string}`;
+  const account = privateKeyToAccount(key);
+  const transport = http(SEPOLIA_PUBLIC_RPC);
+  const publicClient = createPublicClient({ chain: sepolia, transport });
+  const walletClient = createWalletClient({ account, chain: sepolia, transport });
+
+  const balance = await publicClient.getBalance({ address: account.address });
+  if (balance === BigInt(0)) {
+    throw new Error('This stealth address is empty');
+  }
+
+  const gas = BigInt(21000);
+  const fees = await publicClient.estimateFeesPerGas();
+  const maxPriorityFeePerGas = (fees.maxPriorityFeePerGas ?? BigInt(1000000)) * BigInt(2);
+  const maxFeePerGas = (fees.maxFeePerGas ?? BigInt(2000000000)) * BigInt(3);
+  const fee = gas * maxFeePerGas;
+  if (fee >= balance) {
+    throw new Error('Balance cannot cover Sepolia gas');
+  }
+
+  const hash = await walletClient.sendTransaction({
+    account,
+    chain: sepolia,
+    to,
+    value: balance - fee,
+    gas,
+    maxFeePerGas,
+    maxPriorityFeePerGas,
+    kzg: undefined,
+  } as never);
+  await publicClient.waitForTransactionReceipt({ hash, timeout: 180_000 });
+  return hash;
+}
+
 async function publicRpc(method: string, params: unknown[]): Promise<unknown> {
   const response = await fetch(SEPOLIA_PUBLIC_RPC, {
     method: 'POST',

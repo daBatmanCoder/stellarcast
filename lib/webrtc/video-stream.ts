@@ -256,3 +256,102 @@ export async function getConnectionStats(pc: RTCPeerConnection): Promise<{
     bytesSent,
   };
 }
+
+export function streamPeerId(roomId: string): string {
+  return `sc${roomId.replace(/[^a-zA-Z0-9]/g, '')}`.slice(0, 60);
+}
+
+type BroadcastHandle = {
+  stream: MediaStream;
+  destroy: () => void;
+};
+
+async function openPeer(id?: string): Promise<{ peer: import('peerjs').default; destroy: () => void }> {
+  const { default: Peer } = await import('peerjs');
+  const peer = id ? new Peer(id) : new Peer();
+  await new Promise<void>((resolve, reject) => {
+    const onOpen = () => resolve();
+    const onError = (error: Error) => reject(error);
+    peer.once('open', onOpen);
+    peer.once('error', onError);
+  });
+  return {
+    peer,
+    destroy: () => {
+      peer.destroy();
+    },
+  };
+}
+
+export async function startHostBroadcast(roomId: string): Promise<BroadcastHandle> {
+  const stream = await getUserMedia({ video: true, audio: true });
+  const id = streamPeerId(roomId);
+  let opened: Awaited<ReturnType<typeof openPeer>>;
+  try {
+    opened = await openPeer(id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (!message.toLowerCase().includes('unavailable') && !message.toLowerCase().includes('taken')) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      opened = await openPeer(id);
+    } catch (retryError) {
+      stream.getTracks().forEach((track) => track.stop());
+      throw retryError;
+    }
+  }
+
+  const calls: Array<{ close: () => void }> = [];
+  opened.peer.on('call', (call) => {
+    call.answer(stream);
+    calls.push(call);
+  });
+
+  return {
+    stream,
+    destroy: () => {
+      calls.forEach((call) => call.close());
+      stream.getTracks().forEach((track) => track.stop());
+      opened.destroy();
+    },
+  };
+}
+
+export async function joinHostBroadcast(roomId: string): Promise<BroadcastHandle> {
+  const opened = await openPeer();
+  const dummy = new MediaStream();
+  const call = opened.peer.call(streamPeerId(roomId), dummy);
+  if (!call) {
+    opened.destroy();
+    throw new Error('Could not reach the host camera');
+  }
+
+  const stream = await new Promise<MediaStream>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error('Host camera is not live yet. Wait for the streamer to allow the camera.'));
+    }, 20000);
+    call.once('stream', (remote) => {
+      window.clearTimeout(timer);
+      resolve(remote);
+    });
+    call.once('error', (error) => {
+      window.clearTimeout(timer);
+      reject(error);
+    });
+  }).catch((error) => {
+    call.close();
+    opened.destroy();
+    throw error;
+  });
+
+  return {
+    stream,
+    destroy: () => {
+      call.close();
+      opened.destroy();
+    },
+  };
+}

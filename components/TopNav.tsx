@@ -291,7 +291,7 @@ export function TopNav({
                       onViewStealthAddress();
                     }}
                   >
-                    View stealth address
+                    Collect payments
                   </button>
                 )}
 

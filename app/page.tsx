@@ -349,6 +349,9 @@ export default function Home() {
 
   const handleViewStealthAddress = () => {
     setViewStealthOpen(true);
+    if (metamask.address) {
+      void unlockHostIdentity(metamask.address);
+    }
   };
 
   const enterRoom = (room: LiveRoom, credential: string) => {
@@ -558,7 +561,7 @@ export default function Home() {
         void reloadRooms();
         setAppNotice({
           title: 'Stream ended',
-          body: 'Viewers still in the room will be told it closed. Payments stay in one-time stealth addresses from your recipient.json — they are not in this wallet.',
+          body: 'Viewers still in the room will be told it closed. Collect payments from the account menu — sweep to a fresh address, not this wallet.',
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : '';
@@ -767,6 +770,7 @@ export default function Home() {
         metaAddress={metaAddress}
         walletAddress={metamask.address || ''}
         receivingStatus={receivingStatus}
+        identity={identity}
         onClose={() => setViewStealthOpen(false)}
       />
 
