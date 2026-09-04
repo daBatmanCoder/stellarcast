@@ -17,10 +17,11 @@ interface StealthSetupModalProps {
   walletAddress: string;
   identity: StealthIdentity | null;
   metaAddress: string;
+  ensName?: string;
   initialStatus?: ReceivingStatus;
   statusMessage?: string;
   onClose: () => void;
-  onRegistered: (metaAddress: string) => void;
+  onRegistered: (metaAddress: string, slot?: number) => void;
 }
 
 type Phase = 'explain' | 'registering' | 'success' | 'error';
@@ -30,6 +31,7 @@ export function StealthSetupModal({
   walletAddress,
   identity,
   metaAddress,
+  ensName,
   initialStatus = 'needs-setup',
   statusMessage,
   onClose,
@@ -58,10 +60,10 @@ export function StealthSetupModal({
     setError('');
 
     try {
-      const { txHash: hash, metaEncoded } = await registerReceivingMetaAddress(walletAddress, identity);
-      setTxHash(hash);
+      const result = await registerReceivingMetaAddress(walletAddress, identity, { ensName });
+      setTxHash(result.txHash);
       setPhase('success');
-      onRegistered(metaEncoded);
+      onRegistered(result.metaEncoded, result.slot);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Registration failed';
       if (msg.toLowerCase().includes('reject') || msg.toLowerCase().includes('denied')) {

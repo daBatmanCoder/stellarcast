@@ -99,24 +99,55 @@ export class LiveProtocolAdapter implements ProtocolAdapter {
     private announcerAddress: string
   ) {}
 
-  async resolveENS(_name: string): Promise<string | null> {
-    console.warn('ENS resolution not implemented on live adapter — use Sepolia ENS resolver helpers');
-    return null;
+  async resolveENS(name: string): Promise<string | null> {
+    const { resolveSepoliaENS } = await import('../ens/resolver');
+    return await resolveSepoliaENS(name);
   }
 
   async getMetaAddress(address: string): Promise<StealthMetaAddress | null> {
-    const { checkRegistryDeployed, readMetaAddress } = await import('../blockchain/contracts');
+    const { parseStealthMetaAddressFromENS } = await import('../blockchain/contracts');
+    const { reverseResolveSepoliaENS, getSepoliaTextRecord } = await import('../ens/resolver');
 
-    const isDeployed = await checkRegistryDeployed(this.registryAddress);
-    if (!isDeployed) {
-      throw new Error(
-        `ERC-6538 registry not deployed at ${this.registryAddress} on chain ${this.chainId}. ` +
-          'Cannot read meta-addresses without deployed contract. ' +
-          'Use mock mode for testing without contracts.'
-      );
+    // Try ENS resolution first (primary source of truth)
+    try {
+      const ensName = await reverseResolveSepoliaENS(address);
+      if (ensName) {
+        // Check stealth-meta-address[1] first (standard key)
+        const metaText = await getSepoliaTextRecord(ensName, 'stealth-meta-address[1]');
+        if (metaText) {
+          const parsed = parseStealthMetaAddressFromENS(metaText);
+          if (parsed) {
+            console.log(`Found stealth meta in ENS ${ensName} slot [1]`);
+            return parsed;
+          }
+        }
+
+        // Fall back to legacy key if present
+        const legacyText = await getSepoliaTextRecord(ensName, 'eth.stellarcast.stealth');
+        if (legacyText) {
+          const parsed = parseStealthMetaAddressFromENS(legacyText);
+          if (parsed) {
+            console.log(`Found stealth meta in ENS ${ensName} legacy key`);
+            return parsed;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('ENS resolution failed, will try ERC-6538 registry:', error);
     }
 
-    return await readMetaAddress(this.registryAddress, address, BigInt(1));
+    // Fall back to ERC-6538 registry as secondary option
+    const { checkRegistryDeployed, readMetaAddress } = await import('../blockchain/contracts');
+    const isDeployed = await checkRegistryDeployed(this.registryAddress);
+    if (isDeployed) {
+      try {
+        return await readMetaAddress(this.registryAddress, address, BigInt(1));
+      } catch (error) {
+        console.warn('ERC-6538 registry read failed:', error);
+      }
+    }
+
+    return null;
   }
 
   async registerStealthMetaAddress(from: string, meta: StealthMetaAddress): Promise<string> {

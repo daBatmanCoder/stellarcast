@@ -2,28 +2,54 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { LiveRoom } from '@/lib/data/seed-rooms';
+import type { StealthIdentity } from '@/lib/types/stealth';
 import { formatViewerCount, hostInitials, truncateAddress } from '@/lib/utils/asset';
 import { Avatar } from './ui/Avatar';
 import { LiveBadge, Tag } from './ui/Badges';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
 import { IconChevronLeft, IconClose, IconPanel, IconWarning } from './ui/Icons';
+import { useAnnouncementScanner } from '@/hooks/useAnnouncementScanner';
+import type { MatchedPayment } from '@/lib/stealth/announcement-watcher';
 
 interface RoomViewProps {
   room: LiveRoom;
   roomCredential: string;
   onLeave: () => void;
   isHost?: boolean;
+  hostIdentity?: StealthIdentity | null;
+  onPaymentDetected?: (payment: MatchedPayment) => void;
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'failed';
 
-export function RoomView({ room, roomCredential, onLeave, isHost = false }: RoomViewProps) {
+export function RoomView({ 
+  room, 
+  roomCredential, 
+  onLeave, 
+  isHost = false,
+  hostIdentity = null,
+  onPaymentDetected,
+}: RoomViewProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string>('');
   const [panelOpen, setPanelOpen] = useState(true);
+  const [detectedPayments, setDetectedPayments] = useState<MatchedPayment[]>([]);
+
+  // Scan for payments if this is a host
+  const scanner = useAnnouncementScanner({
+    identity: isHost ? hostIdentity : null,
+    enabled: isHost && hostIdentity !== null,
+    intervalMs: 30000, // Scan every 30 seconds
+    fromBlock: 0,
+    onPaymentDetected: (payment) => {
+      console.log('Payment detected!', payment);
+      setDetectedPayments(prev => [payment, ...prev]);
+      onPaymentDetected?.(payment);
+    },
+  });
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -163,6 +189,81 @@ export function RoomView({ room, roomCredential, onLeave, isHost = false }: Room
       <div className="watch-layout" style={{ flex: 1, minHeight: 0 }}>
         <div className="watch-player-column">
           <div style={{ position: 'relative', background: '#000', aspectRatio: '16 / 9', width: '100%' }}>
+            {/* Host: Payment detection notifications */}
+            {isHost && detectedPayments.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 16,
+                  right: 16,
+                  maxWidth: 320,
+                  backgroundColor: 'rgba(0, 245, 147, 0.95)',
+                  backdropFilter: 'blur(12px)',
+                  borderRadius: 12,
+                  padding: 16,
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                  zIndex: 15,
+                }}
+              >
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
+                }}>
+                  <div style={{ 
+                    fontSize: 14, 
+                    fontWeight: 700,
+                    color: '#000',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}>
+                    <span style={{ fontSize: 18 }}>💰</span>
+                    {detectedPayments.length} Payment{detectedPayments.length !== 1 ? 's' : ''} Received
+                  </div>
+                  <button
+                    onClick={() => setDetectedPayments([])}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'rgba(0, 0, 0, 0.5)',
+                      cursor: 'pointer',
+                      padding: 4,
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <IconClose size={16} />
+                  </button>
+                </div>
+                <div style={{ 
+                  fontSize: 12, 
+                  color: 'rgba(0, 0, 0, 0.7)',
+                  lineHeight: 1.5,
+                }}>
+                  Viewers have paid to your stealth address. Room access credentials delivered to their inbox.
+                </div>
+                {scanner.isScanning && (
+                  <div style={{
+                    marginTop: 8,
+                    fontSize: 11,
+                    color: 'rgba(0, 0, 0, 0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}>
+                    <span style={{ 
+                      width: 6, 
+                      height: 6, 
+                      borderRadius: '50%', 
+                      backgroundColor: '#00f593',
+                    }} />
+                    Scanner active
+                  </div>
+                )}
+              </div>
+            )}
             {remoteStream ? (
               <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             ) : localStream ? (
