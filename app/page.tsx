@@ -541,6 +541,12 @@ export default function Home() {
           roomCredential={activeRoom.credential}
           onLeave={handleLeaveRoom}
           isHost={activeRoom.credential === 'host-stream'}
+          hostIdentity={identity}
+          onPaymentDetected={(payment) => {
+            console.log('Host detected payment:', payment);
+            // Payment automatically has the shared secret which = access credential
+            // Viewer already has this from their payment flow
+          }}
         />
       )}
 
