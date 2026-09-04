@@ -510,10 +510,7 @@ export default function Home() {
           stealthMetaAddress: undefined,
         };
         upsertRoom(ended);
-        setHostRooms((prev) => {
-          const rest = prev.filter((room) => room.id !== ended.id);
-          return [ended, ...rest];
-        });
+        setHostRooms((prev) => prev.filter((room) => room.id !== ended.id));
         setActiveRoom(null);
         void reloadRooms();
       } catch (err) {

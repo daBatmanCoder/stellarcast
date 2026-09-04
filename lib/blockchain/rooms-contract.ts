@@ -401,7 +401,7 @@ export async function getRoomsByHost(hostAddress: string): Promise<LiveRoom[]> {
 
     for (const tokenId of tokenIds) {
       const metadata = await getRoomMetadata(tokenId);
-      if (!metadata) continue;
+      if (!metadata || !metadata.isLive || metadata.burned) continue;
 
       rooms.push(metadataToLiveRoom(metadata, createdBlocks));
     }
