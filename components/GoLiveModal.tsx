@@ -48,8 +48,15 @@ export function GoLiveModal({
     setEnsInput(ensName);
     setActiveEns(ensName);
     setStealthMetaAddress(metaAddress);
-    setStep('ens-verify');
-    setError('');
+    
+    // Skip ENS verification if already verified
+    if (ensName && ensName.endsWith('.eth')) {
+      setStep('stealth-setup');
+      setError('');
+    } else {
+      setStep('ens-verify');
+      setError('');
+    }
   }, [isOpen, ensName, metaAddress]);
 
   const categories = [

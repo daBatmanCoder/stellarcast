@@ -432,23 +432,86 @@ export default function Home() {
     }
   };
 
-  const handleStartStream = (title: string, category: string) => {
-    const hostRoom: LiveRoom = {
-      id: `host-${Date.now()}`,
-      host: metamask.address || '',
-      hostDisplayName: verifiedEnsName || `Host ${metamask.address?.slice(0, 6)}`,
-      title,
-      category,
-      viewers: 1,
-      tags: [category, 'Live'],
-      isFeatured: false,
-      isDemoSeed: false,
-      thumbnail: '',
-      isLive: true,
-    };
+  const handleStartStream = async (title: string, category: string) => {
+    if (!metamask.address || !identity) {
+      setGoLiveModalOpen(false);
+      return;
+    }
 
-    setGoLiveModalOpen(false);
-    setActiveRoom({ room: hostRoom, credential: 'host-stream' });
+    try {
+      // Generate secure room credential
+      const { generateSecureCredential } = await import('@/lib/crypto/credentials');
+      const roomCredential = generateSecureCredential('ROOM');
+
+      // Derive encryption key from host's identity
+      const hostKeyMaterial = new Uint8Array([
+        ...identity.spendingPrivateKey,
+        ...identity.viewingPrivateKey,
+      ]);
+      
+      // Encrypt and package room access data
+      const { encryptAndPackageRoomAccess } = await import('@/lib/crypto/room-access');
+      const encryptedAccessData = await encryptAndPackageRoomAccess(
+        roomCredential,
+        hostKeyMaterial.slice(0, 32)
+      );
+
+      // Create room NFT on-chain
+      const { createRoomOnChain } = await import('@/lib/blockchain/rooms');
+      const { waitForTransactionReceipt } = await import('@/lib/blockchain/transactions');
+      
+      console.log('Creating room NFT...', { title, category, encryptedAccessData });
+      
+      const txHash = await createRoomOnChain(
+        metamask.address,
+        title,
+        category,
+        encryptedAccessData
+      );
+
+      console.log('Room creation transaction sent:', txHash);
+
+      // Wait for confirmation
+      const receipt = await waitForTransactionReceipt(txHash);
+      console.log('Room NFT minted:', receipt);
+
+      // Create local room object
+      const hostRoom: LiveRoom = {
+        id: `host-${Date.now()}`,
+        host: metamask.address,
+        hostDisplayName: verifiedEnsName || `Host ${metamask.address?.slice(0, 6)}`,
+        title,
+        category,
+        viewers: 1,
+        tags: [category, 'Live'],
+        isFeatured: false,
+        isDemoSeed: false,
+        thumbnail: '',
+        isLive: true,
+      };
+
+      setGoLiveModalOpen(false);
+      setActiveRoom({ room: hostRoom, credential: roomCredential });
+    } catch (error) {
+      console.error('Failed to create room:', error);
+      
+      // Show user-friendly error
+      let errorMessage = 'Failed to create room';
+      if (error instanceof Error) {
+        if (error.message.includes('rejected') || error.message.includes('denied')) {
+          errorMessage = 'Transaction was rejected. Please try again.';
+        } else if (error.message.includes('insufficient funds')) {
+          errorMessage = 'Insufficient funds for gas. Please add ETH to your wallet.';
+        } else if (error.message.includes('not deployed')) {
+          errorMessage = 'Room contract not found. Please check network connection.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      alert(errorMessage);
+      // Keep modal open so user can retry
+    }
   };
 
   const handleSelectCategory = (category: CategoryItem) => {

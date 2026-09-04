@@ -24,7 +24,7 @@ interface StealthSetupModalProps {
   onRegistered: (metaAddress: string, slot?: number) => void;
 }
 
-type Phase = 'explain' | 'registering' | 'success' | 'error';
+type Phase = 'explain' | 'import' | 'registering' | 'success' | 'error';
 
 export function StealthSetupModal({
   isOpen,
@@ -40,12 +40,14 @@ export function StealthSetupModal({
   const [phase, setPhase] = useState<Phase>('explain');
   const [error, setError] = useState('');
   const [txHash, setTxHash] = useState('');
+  const [importError, setImportError] = useState('');
   const adapterMode = getProtocolAdapter().mode;
 
   useEffect(() => {
     if (!isOpen) return;
     setPhase('explain');
     setError('');
+    setImportError('');
     setTxHash('');
   }, [isOpen, initialStatus]);
 
@@ -75,12 +77,77 @@ export function StealthSetupModal({
     }
   };
 
+  const handleImportKeys = () => {
+    setPhase('import');
+    setImportError('');
+  };
+
+  const handleFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImportError('');
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      // Validate structure
+      if (!data.spendingPrivateKey || !data.viewingPrivateKey) {
+        throw new Error('Invalid recipient.json format - missing private keys');
+      }
+
+      // Import the identity
+      const { storeIdentity } = await import('@/lib/storage/identity-store');
+
+      // Parse keys from hex
+      const spendingPrivateKey = new Uint8Array(Buffer.from(data.spendingPrivateKey.replace('0x', ''), 'hex'));
+      const viewingPrivateKey = new Uint8Array(Buffer.from(data.viewingPrivateKey.replace('0x', ''), 'hex'));
+      
+      // Derive public keys
+      const { secp256k1 } = await import('@noble/curves/secp256k1.js');
+      const spendingPublicKey = secp256k1.getPublicKey(spendingPrivateKey, true);
+      const viewingPublicKey = secp256k1.getPublicKey(viewingPrivateKey, true);
+
+      const importedIdentity: StealthIdentity = {
+        spendingPrivateKey,
+        viewingPrivateKey,
+        spendingPublicKey,
+        viewingPublicKey,
+      };
+
+      // Get encryption key from wallet
+      const { authenticateWithWallet } = await import('@/lib/wallet/wallet-auth');
+      const { encryptionKey, nonce: authNonce } = await authenticateWithWallet(walletAddress);
+      
+      // Store the imported identity
+      const authTimestamp = new Date().toISOString();
+      await storeIdentity(importedIdentity, walletAddress, encryptionKey, authNonce, authTimestamp);
+
+      // Encode meta-address
+      const { encodeStealthMetaAddressForENS } = await import('@/lib/blockchain/contracts');
+      const metaEncoded = encodeStealthMetaAddressForENS({
+        spendingPublicKey,
+        viewingPublicKey,
+        scheme: 1,
+      });
+
+      setPhase('success');
+      onRegistered(metaEncoded);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to import keys';
+      setImportError(msg);
+    }
+  };
+
   const title =
     phase === 'success'
       ? 'Receiving ready'
-      : initialStatus === 'keys-mismatch'
-        ? 'Update stealth receiving'
-        : 'Create stealth address';
+      : phase === 'import'
+        ? 'Import private keys'
+        : initialStatus === 'keys-mismatch'
+          ? 'Update stealth receiving'
+          : 'Create stealth address';
 
   return (
     <ModalShell isOpen={isOpen} onClose={phase === 'registering' ? undefined : onClose} allowOverlayClose={phase !== 'registering'} mobileBottomSheet>
@@ -189,12 +256,83 @@ export function StealthSetupModal({
               <p style={{ fontSize: 13, color: 'var(--live)', margin: '0 0 12px' }}>{error}</p>
             )}
 
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {initialStatus === 'keys-mismatch' && (
+                <Button variant="primary" fullWidth onClick={handleImportKeys}>
+                  Import matching keys
+                </Button>
+              )}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button variant="secondary" fullWidth onClick={onClose}>
+                  Not now
+                </Button>
+                <Button variant={initialStatus === 'keys-mismatch' ? 'secondary' : 'primary'} fullWidth onClick={handleRegister} disabled={!identity || !walletAddress}>
+                  {initialStatus === 'keys-mismatch' ? 'Register new keys' : 'Create & register'}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {phase === 'import' && (
+          <>
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 'var(--radius-md)',
+                background: 'rgba(255, 185, 0, 0.08)',
+                border: '1px solid rgba(255, 185, 0, 0.24)',
+                marginBottom: 16,
+                fontSize: 12,
+                color: 'var(--text-secondary)',
+                lineHeight: 1.45,
+              }}
+            >
+              <strong style={{ color: '#FFB900' }}>⚠️ Security notice</strong>
+              <p style={{ margin: '8px 0 0' }}>
+                Only import keys from your own secure backup (recipient.json). Never paste keys from untrusted sources.
+              </p>
+            </div>
+
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-subtle)',
+                marginBottom: 16,
+              }}
+            >
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
+                Upload your recipient.json file containing private keys:
+              </p>
+              <input
+                type="file"
+                accept=".json,application/json"
+                onChange={handleFileImport}
+                style={{
+                  width: '100%',
+                  padding: 8,
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--bg-body)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-primary)',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              />
+              <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 0' }}>
+                Expected format: JSON with spendingPrivateKey and viewingPrivateKey fields
+              </p>
+            </div>
+
+            {importError && (
+              <p style={{ fontSize: 13, color: 'var(--live)', margin: '0 0 12px' }}>{importError}</p>
+            )}
+
             <div style={{ display: 'flex', gap: 8 }}>
-              <Button variant="secondary" fullWidth onClick={onClose}>
-                Not now
-              </Button>
-              <Button variant="primary" fullWidth onClick={handleRegister} disabled={!identity || !walletAddress}>
-                {initialStatus === 'keys-mismatch' ? 'Register new keys' : 'Create & register'}
+              <Button variant="secondary" fullWidth onClick={() => setPhase('explain')}>
+                Back
               </Button>
             </div>
           </>
