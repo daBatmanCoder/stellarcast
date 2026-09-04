@@ -62,7 +62,9 @@ export function ModalShell({
     }
   };
 
-  const isBottomSheet = mobileBottomSheet && isMobile;
+  // Force check on every render for immediate responsiveness
+  const currentlyMobile = typeof window !== 'undefined' && window.innerWidth <= 640;
+  const isBottomSheet = mobileBottomSheet && (isMobile || currentlyMobile);
 
   const modalContent = (
     <>
