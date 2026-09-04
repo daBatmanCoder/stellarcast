@@ -10,8 +10,8 @@ interface PaymentModalProps {
   room: LiveRoom | null;
   ensName: string;
   onClose: () => void;
-  onSuccess: (txHash: string) => void;
-  onPay: () => Promise<string>; // Returns tx hash
+  onSuccess: (txHash: string, sharedSecret: Uint8Array) => void;
+  onPay: () => Promise<{ txHash: string; sharedSecret: Uint8Array }>;
 }
 
 export function PaymentModal({
@@ -34,20 +34,23 @@ export function PaymentModal({
     }
   }, [isOpen]);
 
+  const [sharedSecret, setSharedSecret] = useState<Uint8Array | null>(null);
+
   const handlePay = async () => {
     setStatus('paying');
     setError('');
 
     try {
-      const hash = await onPay();
-      setTxHash(hash);
+      const result = await onPay();
+      setTxHash(result.txHash);
+      setSharedSecret(result.sharedSecret);
       setStatus('confirming');
 
       // Wait a bit then mark as success
       setTimeout(() => {
         setStatus('success');
         setTimeout(() => {
-          onSuccess(hash);
+          onSuccess(result.txHash, result.sharedSecret);
         }, 1500);
       }, 3000);
     } catch (err) {
