@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import type { LiveRoom } from '@/lib/data/seed-rooms';
 import type { StealthIdentity } from '@/lib/types/stealth';
 import { formatViewerCount, hostInitials, truncateAddress } from '@/lib/utils/asset';
@@ -8,7 +8,7 @@ import { Avatar } from './ui/Avatar';
 import { LiveBadge, Tag } from './ui/Badges';
 import { Button } from './ui/Button';
 import { IconButton } from './ui/IconButton';
-import { IconChevronLeft, IconClose, IconPanel, IconWarning } from './ui/Icons';
+import { IconChevronLeft, IconClose, IconPanel } from './ui/Icons';
 import { useAnnouncementScanner } from '@/hooks/useAnnouncementScanner';
 import type { MatchedPayment } from '@/lib/stealth/announcement-watcher';
 import { parseNativeEthAmount, parseStealthPaymentKind } from '@/lib/crypto/stealth';
@@ -26,8 +26,6 @@ interface RoomViewProps {
   onTip?: (amountEth: string) => Promise<void>;
 }
 
-type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'failed';
-
 export function RoomView({ 
   room, 
   roomCredential, 
@@ -37,10 +35,6 @@ export function RoomView({
   onPaymentDetected,
   onTip,
 }: RoomViewProps) {
-  const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  const [error, setError] = useState<string>('');
   const [panelOpen, setPanelOpen] = useState(true);
   const [detectedPayments, setDetectedPayments] = useState<MatchedPayment[]>([]);
   const [tipAmount, setTipAmount] = useState<(typeof TIP_AMOUNTS)[number]>('0.001');
@@ -65,96 +59,7 @@ export function RoomView({
     },
   });
 
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-
-  useEffect(() => {
-    initializeConnection();
-    return () => {
-      cleanup();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
-    }
-  }, [localStream, remoteStream]);
-
-  useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
-    }
-  }, [remoteStream]);
-
-  const initializeConnection = async () => {
-    if (isHost && !room.isLive) {
-      setConnectionState('disconnected');
-      return;
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-      });
-
-      peerConnectionRef.current = pc;
-
-      stream.getTracks().forEach((track) => {
-        pc.addTrack(track, stream);
-      });
-
-      pc.ontrack = (event) => {
-        if (event.streams && event.streams[0]) {
-          setRemoteStream(event.streams[0]);
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        const state = pc.connectionState;
-        if (state === 'connected') {
-          setConnectionState('connected');
-        } else if (state === 'disconnected') {
-          setConnectionState('disconnected');
-        } else if (state === 'failed') {
-          setConnectionState('failed');
-          setError('Connection failed');
-        } else if (state === 'connecting' || state === 'new') {
-          setConnectionState('connecting');
-        }
-      };
-
-      // Demo: local preview ready without signaling server
-      setConnectionState('connected');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to initialize stream';
-      if (isHost) {
-        setError(message);
-        setConnectionState('disconnected');
-        return;
-      }
-      setError(message);
-      setConnectionState('failed');
-    }
-  };
-
-  const cleanup = () => {
-    localStreamRef.current?.getTracks().forEach((track) => track.stop());
-    peerConnectionRef.current?.close();
-  };
-
   const handleLeave = () => {
-    cleanup();
     onLeave();
   };
 
@@ -216,8 +121,8 @@ export function RoomView({
             <IconChevronLeft size={16} />
             {isHost && room.isLive ? 'End stream' : 'Leave'}
           </Button>
-          {connectionState === 'connected' ? <LiveBadge /> : (
-            <span className="tag-pill" style={{ textTransform: 'uppercase' }}>{connectionState}</span>
+          {room.isLive ? <LiveBadge /> : (
+            <span className="tag-pill" style={{ textTransform: 'uppercase' }}>ended</span>
           )}
           <span className="truncate-1" style={{ fontSize: 14, fontWeight: 600 }}>
             {room.title}
@@ -324,94 +229,18 @@ export function RoomView({
                 )}
               </div>
             )}
-            {remoteStream ? (
-              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-            ) : localStream ? (
-              <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-contain" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-            ) : isHost && !room.isLive ? (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ textAlign: 'center', padding: 24 }}>
-                  <p style={{ color: 'var(--text-primary)', fontSize: 16, fontWeight: 600, margin: 0 }}>
-                    Stream ended
-                  </p>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '8px 0 0' }}>
-                    Paid joins and tips are in the host dashboard.
-                  </p>
-                </div>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ textAlign: 'center', padding: 24, maxWidth: 400 }}>
+                <p style={{ color: 'var(--text-primary)', fontSize: 16, fontWeight: 600, margin: 0 }}>
+                  {room.isLive ? 'Video comes later' : 'Stream ended'}
+                </p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '8px 0 0', lineHeight: 1.4 }}>
+                  {isHost
+                    ? 'Use the host dashboard for paid joins and tips. Camera and WebRTC stay off until payments are solid.'
+                    : 'You are in the paid room. Tip the creator from the session panel. Livestream video is not on yet.'}
+                </p>
               </div>
-            ) : (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div
-                    className="spin"
-                    style={{
-                      width: 40,
-                      height: 40,
-                      margin: '0 auto 12px',
-                      borderRadius: '50%',
-                      border: '2px solid var(--bg-elevated)',
-                      borderTopColor: 'var(--accent-primary)',
-                    }}
-                  />
-                  <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Initializing stream…</p>
-                </div>
-              </div>
-            )}
-
-            {localStream && remoteStream && (
-              <div
-                style={{
-                  position: 'absolute',
-                  right: 12,
-                  bottom: 12,
-                  width: 160,
-                  aspectRatio: '16 / 9',
-                  borderRadius: 'var(--radius-md)',
-                  overflow: 'hidden',
-                  border: '1px solid var(--border-subtle)',
-                  background: '#000',
-                }}
-              >
-                <video ref={localVideoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              </div>
-            )}
-
-            {error && !isHost && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'rgba(0,0,0,0.82)',
-                  padding: 16,
-                }}
-              >
-                <div className="surface" style={{ maxWidth: 360, padding: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color: 'var(--live)' }}>
-                    <IconWarning size={18} />
-                    <strong style={{ fontSize: 14 }}>Stream error</strong>
-                  </div>
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>{error}</p>
-                  <Button variant="secondary" size="sm" onClick={handleLeave}>
-                    Leave room
-                  </Button>
-                </div>
-              </div>
-            )}
-            {error && isHost && !localStream && (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ textAlign: 'center', padding: 24, maxWidth: 360 }}>
-                  <p style={{ color: 'var(--text-primary)', fontSize: 16, fontWeight: 600, margin: 0 }}>
-                    Camera blocked
-                  </p>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '8px 0 0', lineHeight: 1.4 }}>
-                    {error}. The room is still live. Allow camera for this site, or keep the host dashboard open.
-                  </p>
-                </div>
-              </div>
-            )}
+            </div>
           </div>
 
           <div style={{ padding: 16, borderTop: '1px solid var(--border-subtle)' }}>
@@ -483,7 +312,7 @@ export function RoomView({
 
               <div className="scroll-y" style={{ flex: 1, padding: 12 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
-                  <Row label="Status" value={room.burned ? 'burned' : room.isLive ? connectionState : 'ended'} />
+                  <Row label="Status" value={room.burned ? 'burned' : room.isLive ? 'live' : 'ended'} />
                   <Row label="Category" value={room.category} />
                   <Row label="Host" value={hostLabel} />
                   {isHost ? (

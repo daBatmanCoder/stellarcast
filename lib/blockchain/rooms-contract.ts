@@ -10,13 +10,10 @@ import type { LiveRoom } from '@/lib/storage/rooms-store';
 /**
  * Deployed StellaCast Rooms contract address on Sepolia
  * 
- * DEPLOYMENT STATUS: DEPLOYED
- *
- * Contract: 0x938B1E2E531817EACb8555F8Fc3a2e868e4FB3a5
- * Deploy Tx: 0x4ebeb0c23d04587691d8bda3d2779914d6a52586fc45bc6e58a7d8d088412f73
- * Deployer: 0xD0a2b03fCCAD184B9eec286FeFA34301E9436206
+ * Live registry: 0x938B1E2E531817EACb8555F8Fc3a2e868e4FB3a5
+ * Deploy tx: 0x4ebeb0c23d04587691d8bda3d2779914d6a52586fc45bc6e58a7d8d088412f73
  * Deploy block: 11633926
- * Previous: 0x4D34702b7967272adba2A361766cC461CF72f60a
+ * Abandoned: 0x4D34702b7967272adba2A361766cC461CF72f60a
  */
 export const ROOM_CONTRACT_ADDRESS = '0x938B1E2E531817EACb8555F8Fc3a2e868e4FB3a5';
 const ROOM_DEPLOY_BLOCK = 11_633_926;
@@ -114,9 +111,6 @@ function parseRoomCreatedTokenId(
   return undefined;
 }
 
-/**
- * Burn the live room NFT. Same host transaction as closing the stream.
- */
 export async function endRoomOnChain(
   fromAddress: string,
   tokenId: number
