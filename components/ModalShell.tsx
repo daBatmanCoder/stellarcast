@@ -59,16 +59,16 @@ export function ModalShell({
       <div
         style={{
           position: 'fixed',
-          top: '0px',
-          right: '0px',
-          bottom: '0px',
-          left: '0px',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
           width: '100vw',
           height: '100vh',
-          backgroundColor: 'rgba(0, 0, 0, 0.72)',
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
-          zIndex: 9998,
+          zIndex: 50,
           animation: 'modal-overlay-fade 160ms ease-out forwards'
         }}
       />
@@ -78,17 +78,17 @@ export function ModalShell({
         onClick={handleOverlayClick}
         style={{
           position: 'fixed',
-          top: '0px',
-          right: '0px',
-          bottom: '0px',
-          left: '0px',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
           width: '100vw',
           height: '100vh',
           display: 'flex',
           alignItems: mobileBottomSheet ? 'flex-end' : 'center',
           justifyContent: 'center',
-          padding: mobileBottomSheet ? '0px' : '16px',
-          zIndex: 9999,
+          padding: mobileBottomSheet ? 0 : 16,
+          zIndex: 51,
           overflowY: 'auto',
           pointerEvents: 'auto'
         }}
@@ -100,15 +100,15 @@ export function ModalShell({
           aria-modal="true"
           style={{
             position: 'relative',
-            width: mobileBottomSheet ? '100%' : 'min(420px, calc(100vw - 32px))',
-            maxWidth: mobileBottomSheet ? '100%' : '480px',
-            minWidth: '320px',
-            borderRadius: mobileBottomSheet ? '20px 20px 0 0' : '24px',
+            width: '100%',
+            maxWidth: mobileBottomSheet ? '100%' : 440,
+            minWidth: 320,
+            borderRadius: mobileBottomSheet ? '20px 20px 0 0' : 16,
             backgroundColor: '#16161D',
             border: '1px solid rgba(255, 255, 255, 0.08)',
             boxShadow: '0 24px 48px rgba(0, 0, 0, 0.48)',
             animation: 'modal-card-enter 200ms ease-out forwards',
-            paddingBottom: mobileBottomSheet ? 'env(safe-area-inset-bottom, 0px)' : '0',
+            paddingBottom: mobileBottomSheet ? 'env(safe-area-inset-bottom, 0px)' : 0,
             margin: '0 auto',
             pointerEvents: 'auto'
           }}
