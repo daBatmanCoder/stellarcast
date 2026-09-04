@@ -133,8 +133,8 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
           left: 0,
           right: 0,
           height: '4px',
-          backgroundColor: '#7C5CFF',
-          borderRadius: '24px 24px 0 0'
+          backgroundColor: "var(--accent-primary)",
+          borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0'
         }} />
 
         {/* Close button */}
@@ -154,7 +154,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
             justifyContent: 'center',
             borderRadius: '8px',
             transition: 'background 150ms ease',
-            color: 'rgba(255, 255, 255, 0.48)'
+            color: 'var(--text-muted)'
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
@@ -175,7 +175,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
             fontSize: '22px', 
             lineHeight: '28px', 
             fontWeight: 700,
-            color: '#FFFFFF',
+            color: 'var(--text-primary)',
             marginBottom: '8px'
           }}>
             MetaMask Required
@@ -200,7 +200,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
               width: '100%',
               height: '48px',
               borderRadius: '14px',
-              backgroundColor: '#7C5CFF',
+              backgroundColor: "var(--accent-primary)",
               color: 'white',
               fontSize: '15px',
               fontWeight: 600,
@@ -214,7 +214,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
               e.currentTarget.style.transform = 'translateY(-1px)';
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#7C5CFF';
+              e.currentTarget.style.backgroundColor = "var(--accent-primary)";
               e.currentTarget.style.transform = 'translateY(0)';
             }}
           >
@@ -236,8 +236,8 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
         left: 0,
         right: 0,
         height: '4px',
-        backgroundColor: '#7C5CFF',
-        borderRadius: '24px 24px 0 0'
+        backgroundColor: "var(--accent-primary)",
+        borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0'
       }} />
 
       {/* Close button */}
@@ -256,7 +256,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
             borderRadius: '8px',
             backgroundColor: 'transparent',
             border: 'none',
-            color: 'rgba(255, 255, 255, 0.48)',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
             transition: 'all 150ms ease'
           }}
@@ -279,7 +279,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
           fontSize: '22px', 
           lineHeight: '28px', 
           fontWeight: 700,
-          color: '#FFFFFF',
+          color: 'var(--text-primary)',
           marginBottom: '8px'
         }}>
           Welcome to Stellarcast
@@ -332,7 +332,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
               alignItems: 'center',
               gap: '12px',
               padding: '10px 12px',
-              backgroundColor: '#1C1C26',
+              backgroundColor: "var(--bg-elevated)",
               borderRadius: '12px',
               marginBottom: '20px'
             }}>
@@ -341,12 +341,12 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
                   width: '6px',
                   height: '6px',
                   borderRadius: '50%',
-                  backgroundColor: '#3DDC97'
+                  backgroundColor: "var(--success)"
                 }} />
                 <span style={{
                   fontSize: '12px',
                   fontWeight: 500,
-                  color: '#3DDC97',
+                  color: "var(--success)",
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px'
                 }}>
@@ -375,7 +375,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
                   borderRadius: '8px',
                   backgroundColor: copied ? 'rgba(61, 220, 151, 0.12)' : 'rgba(255, 255, 255, 0.06)',
                   border: 'none',
-                  color: copied ? '#3DDC97' : 'rgba(255, 255, 255, 0.56)',
+                  color: copied ? "var(--success)" : 'rgba(255, 255, 255, 0.56)',
                   cursor: 'pointer',
                   transition: 'all 150ms ease'
                 }}
@@ -411,7 +411,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
               height: '48px',
               borderRadius: '50%',
               border: '3px solid rgba(255, 255, 255, 0.1)',
-              borderTopColor: '#7C5CFF',
+              borderTopColor: "var(--accent-primary)",
               animation: 'spin 1s linear infinite'
             }} />
             <p style={{
@@ -434,7 +434,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
                 width: '100%',
                 height: '48px',
                 borderRadius: '14px',
-                backgroundColor: '#7C5CFF',
+                backgroundColor: "var(--accent-primary)",
                 border: 'none',
                 color: 'white',
                 fontSize: '15px',
@@ -447,7 +447,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
                 e.currentTarget.style.transform = 'translateY(-1px)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#7C5CFF';
+                e.currentTarget.style.backgroundColor = "var(--accent-primary)";
                 e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
@@ -487,7 +487,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
               width: '100%',
               height: '48px',
               borderRadius: '14px',
-              backgroundColor: '#7C5CFF',
+              backgroundColor: "var(--accent-primary)",
               border: 'none',
               color: 'white',
               fontSize: '15px',
@@ -503,7 +503,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
               }
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#7C5CFF';
+              e.currentTarget.style.backgroundColor = "var(--accent-primary)";
               e.currentTarget.style.transform = 'translateY(0)';
             }}
           >
@@ -517,7 +517,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
         <p style={{
           fontSize: '12px',
           lineHeight: '16px',
-          color: 'rgba(255, 255, 255, 0.48)'
+          color: 'var(--text-muted)'
         }}>
           Sign a message to create your private identity.<br />This does not grant access to your funds.
         </p>

@@ -108,8 +108,8 @@ export function PaymentModal({
         left: 0,
         right: 0,
         height: '4px',
-        backgroundColor: '#7C5CFF',
-        borderRadius: '24px 24px 0 0'
+        backgroundColor: "var(--accent-primary)",
+        borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0'
       }} />
 
       {/* Close button */}
@@ -128,7 +128,7 @@ export function PaymentModal({
             borderRadius: '8px',
             backgroundColor: 'transparent',
             border: 'none',
-            color: 'rgba(255, 255, 255, 0.48)',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
             transition: 'all 150ms ease'
           }}
@@ -151,7 +151,7 @@ export function PaymentModal({
           fontSize: '22px', 
           lineHeight: '28px', 
           fontWeight: 700,
-          color: '#FFFFFF',
+          color: 'var(--text-primary)',
           marginBottom: '8px'
         }}>
           {status === 'success' ? 'Payment Sent!' : 'Unlock stream'}
@@ -173,20 +173,20 @@ export function PaymentModal({
             <div style={{
               padding: '16px',
               borderRadius: '12px',
-              backgroundColor: '#1C1C26',
+              backgroundColor: "var(--bg-elevated)",
               marginBottom: '16px'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                 <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Room</span>
-                <span style={{ fontSize: '13px', fontWeight: 500, color: '#FFFFFF' }}>{room.title}</span>
+                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>{room.title}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                 <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Your Identity</span>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#7C5CFF' }}>{ensName}</span>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: "var(--accent-primary)" }}>{ensName}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                 <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Amount</span>
-                <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: '#FFFFFF' }}>
+                <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)' }}>
                   0.01 ETH
                 </span>
               </div>
@@ -207,7 +207,7 @@ export function PaymentModal({
               <div style={{ 
                 fontSize: '12px', 
                 fontWeight: 600, 
-                color: '#7C5CFF',
+                color: "var(--accent-primary)",
                 marginBottom: '10px',
                 display: 'flex',
                 alignItems: 'center',
@@ -260,7 +260,7 @@ export function PaymentModal({
               height: '48px',
               borderRadius: '50%',
               border: '3px solid rgba(255, 255, 255, 0.1)',
-              borderTopColor: '#7C5CFF',
+              borderTopColor: "var(--accent-primary)",
               animation: 'spin 1s linear infinite'
             }} />
             <p style={{
@@ -286,7 +286,7 @@ export function PaymentModal({
               height: '48px',
               borderRadius: '50%',
               border: '3px solid rgba(255, 255, 255, 0.1)',
-              borderTopColor: '#7C5CFF',
+              borderTopColor: "var(--accent-primary)",
               animation: 'spin 1s linear infinite'
             }} />
             <p style={{
@@ -303,7 +303,7 @@ export function PaymentModal({
                 rel="noopener noreferrer"
                 style={{
                   fontSize: '12px',
-                  color: '#7C5CFF',
+                  color: "var(--accent-primary)",
                   textDecoration: 'none',
                   transition: 'opacity 150ms ease'
                 }}
@@ -336,7 +336,7 @@ export function PaymentModal({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: '#3DDC97',
+              backgroundColor: "var(--success)",
               color: 'white',
               fontSize: '32px'
             }}>
@@ -345,7 +345,7 @@ export function PaymentModal({
             <p style={{
               fontSize: '16px',
               fontWeight: 600,
-              color: '#3DDC97'
+              color: "var(--success)"
             }}>
               Payment Confirmed!
             </p>
@@ -409,7 +409,7 @@ export function PaymentModal({
                 flex: 1,
                 height: '48px',
                 borderRadius: '14px',
-                backgroundColor: '#7C5CFF',
+                backgroundColor: "var(--accent-primary)",
                 border: 'none',
                 color: 'white',
                 fontSize: '15px',
@@ -422,7 +422,7 @@ export function PaymentModal({
                 e.currentTarget.style.transform = 'translateY(-1px)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#7C5CFF';
+                e.currentTarget.style.backgroundColor = "var(--accent-primary)";
                 e.currentTarget.style.transform = 'translateY(0)';
               }}
             >

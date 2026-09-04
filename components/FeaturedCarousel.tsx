@@ -1,6 +1,11 @@
 'use client';
 
 import type { LiveRoom } from '@/lib/data/seed-rooms';
+import { assetPath, formatViewerCount, hostInitials, truncateAddress } from '@/lib/utils/asset';
+import { Avatar } from './ui/Avatar';
+import { LiveBadge, MetadataBadge, Tag } from './ui/Badges';
+import { Button } from './ui/Button';
+import { IconPlay } from './ui/Icons';
 
 interface FeaturedCarouselProps {
   room: LiveRoom;
@@ -8,134 +13,114 @@ interface FeaturedCarouselProps {
 }
 
 export function FeaturedCarousel({ room, onJoin }: FeaturedCarouselProps) {
+  const hostLabel = room.hostDisplayName || truncateAddress(room.host);
+  const thumb = room.thumbnail ? assetPath(room.thumbnail) : '';
+
   return (
-    <div className="w-full mb-8">
-      <div className="featured-grid" style={{ display: 'grid', gap: '16px' }}>
-        {/* Player */}
-        <div>
-          <div
-            className="relative rounded-lg overflow-hidden"
-            style={{
-              aspectRatio: '16/9',
-              backgroundColor: 'var(--surface)'
-            }}
-          >
-            {/* Video placeholder */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center space-y-4">
-                <div
-                  className="w-16 h-16 mx-auto rounded-full flex items-center justify-center"
-                  style={{ backgroundColor: 'var(--live)' }}
-                >
-                  <div className="w-0 h-0 ml-1" style={{
-                    borderLeft: '16px solid white',
-                    borderTop: '10px solid transparent',
-                    borderBottom: '10px solid transparent'
-                  }}></div>
-                </div>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                  Click to view stream preview
-                </p>
-              </div>
-            </div>
+    <section className="content-shelf" aria-label="Featured stream">
+      <div className="featured-layout">
+        <button
+          type="button"
+          onClick={() => onJoin(room)}
+          className="content-card"
+          style={{
+            display: 'block',
+            width: '100%',
+            textAlign: 'left',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            color: 'inherit',
+          }}
+        >
+          <div className="thumbnail-wrapper">
+            <div className="thumbnail-inner" style={{ minHeight: 220 }}>
+              {thumb ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={thumb}
+                  alt=""
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                />
+              ) : (
+                <div style={{ width: '100%', height: '100%', background: 'var(--bg-elevated)' }} />
+              )}
 
-            {/* LIVE badge */}
-            <div className="absolute top-4 left-4 flex items-center gap-2">
-              <span
-                className="px-2 py-1 rounded text-xs font-bold uppercase"
+              <div
                 style={{
-                  backgroundColor: 'var(--live)',
-                  color: 'white'
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(0,0,0,0.28)',
                 }}
               >
-                LIVE
-              </span>
-              <span
-                className="px-2 py-1 rounded text-xs font-semibold"
-                style={{
-                  backgroundColor: 'rgba(0,0,0,0.7)',
-                  color: 'white'
-                }}
-              >
-                {room.viewers.toLocaleString()} viewers
-              </span>
+                <span
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: '50%',
+                    background: 'rgba(0,0,0,0.72)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                  }}
+                >
+                  <IconPlay size={24} />
+                </span>
+              </div>
+
+              <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: 6 }}>
+                {room.isLive && <LiveBadge />}
+                <MetadataBadge>{formatViewerCount(room.viewers)} viewers</MetadataBadge>
+              </div>
             </div>
           </div>
-        </div>
+        </button>
 
-        {/* Info panel */}
-        <div>
-          <div
-            className="h-full rounded-lg p-6 flex flex-col justify-between"
-            style={{ backgroundColor: 'var(--surface)' }}
-          >
-            <div className="space-y-4">
-              {/* Avatar + host */}
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-white"
-                  style={{ backgroundColor: 'var(--accent)' }}
-                >
-                  {room.host.slice(2, 4).toUpperCase()}
-                </div>
-                <div>
-                  <p className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {room.hostDisplayName || `${room.host.slice(0, 8)}...`}
-                  </p>
-                  <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-                    {room.category}
-                  </p>
-                </div>
-              </div>
-
-              {/* Title */}
-              <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
-                {room.title}
-              </h3>
-
-              {/* Tags */}
-              <div className="flex flex-wrap gap-2">
-                {room.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="px-2 py-1 rounded text-xs"
-                    style={{
-                      backgroundColor: 'var(--elevated)',
-                      color: 'var(--text-secondary)'
-                    }}
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* CTA */}
-            <button
-              onClick={() => onJoin(room)}
-              className="w-full py-3 rounded font-semibold transition-colors"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'white'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--accent)';
-              }}
-            >
-              Join Stream
-            </button>
-
-            {room.isDemoSeed && (
-              <p className="text-[10px] text-center mt-2" style={{ color: 'var(--text-tertiary)' }}>
-                Demo room
+        <aside
+          className="surface"
+          style={{
+            padding: 16,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            minHeight: 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Avatar initials={hostInitials(room.host, room.hostDisplayName)} size={40} live={room.isLive} />
+            <div style={{ minWidth: 0 }}>
+              <p className="truncate-1" style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>
+                {hostLabel}
               </p>
-            )}
+              <p className="truncate-1" style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+                {room.category}
+              </p>
+            </div>
           </div>
-        </div>
+
+          <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, lineHeight: 1.3 }}>{room.title}</h3>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {room.tags.map((tag) => (
+              <Tag key={tag}>{tag}</Tag>
+            ))}
+          </div>
+
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0, lineHeight: 1.45, flex: 1 }}>
+            Pay with a stealth address to unlock private livestream access on Sepolia.
+            {room.isDemoSeed ? ' Demo room for presentation.' : ''}
+          </p>
+
+          <Button variant="primary" fullWidth onClick={() => onJoin(room)}>
+            Join Stream
+          </Button>
+        </aside>
       </div>
-    </div>
+    </section>
   );
 }

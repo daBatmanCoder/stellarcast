@@ -114,8 +114,8 @@ export function ENSIdentityModal({
         left: 0,
         right: 0,
         height: '4px',
-        backgroundColor: '#7C5CFF',
-        borderRadius: '24px 24px 0 0'
+        backgroundColor: "var(--accent-primary)",
+        borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0'
       }} />
 
       {/* Close button */}
@@ -134,7 +134,7 @@ export function ENSIdentityModal({
             borderRadius: '8px',
             backgroundColor: 'transparent',
             border: 'none',
-            color: 'rgba(255, 255, 255, 0.48)',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
             transition: 'all 150ms ease'
           }}
@@ -157,7 +157,7 @@ export function ENSIdentityModal({
           fontSize: '22px', 
           lineHeight: '28px', 
           fontWeight: 700,
-          color: '#FFFFFF',
+          color: 'var(--text-primary)',
           marginBottom: '8px'
         }}>
           Choose display name
@@ -167,7 +167,7 @@ export function ENSIdentityModal({
           lineHeight: '20px',
           color: 'rgba(255, 255, 255, 0.64)'
         }}>
-          Joining: <span style={{ color: '#7C5CFF', fontWeight: 600 }}>{room.title}</span>
+          Joining: <span style={{ color: "var(--accent-primary)", fontWeight: 600 }}>{room.title}</span>
         </p>
       </div>
 
@@ -184,7 +184,7 @@ export function ENSIdentityModal({
             justifyContent: 'center',
             fontSize: '12px',
             fontWeight: 700,
-            backgroundColor: step === 'input' || step === 'verifying' ? '#7C5CFF' : '#1C1C26',
+            backgroundColor: step === 'input' || step === 'verifying' ? "var(--accent-primary)" : "var(--bg-elevated)",
             color: 'white'
           }}>
             1
@@ -199,7 +199,7 @@ export function ENSIdentityModal({
             justifyContent: 'center',
             fontSize: '12px',
             fontWeight: 700,
-            backgroundColor: step === 'signing' || step === 'verified' ? '#7C5CFF' : '#1C1C26',
+            backgroundColor: step === 'signing' || step === 'verified' ? "var(--accent-primary)" : "var(--bg-elevated)",
             color: 'white'
           }}>
             2
@@ -214,7 +214,7 @@ export function ENSIdentityModal({
             justifyContent: 'center',
             fontSize: '14px',
             fontWeight: 700,
-            backgroundColor: step === 'verified' ? '#3DDC97' : '#1C1C26',
+            backgroundColor: step === 'verified' ? "var(--success)" : "var(--bg-elevated)",
             color: 'white'
           }}>
             ✓
@@ -246,9 +246,9 @@ export function ENSIdentityModal({
                   height: '44px',
                   padding: '0 14px',
                   borderRadius: '12px',
-                  backgroundColor: '#1C1C26',
+                  backgroundColor: "var(--bg-elevated)",
                   border: '1px solid rgba(255, 255, 255, 0.08)',
-                  color: '#FFFFFF',
+                  color: 'var(--text-primary)',
                   fontSize: '14px',
                   outline: 'none',
                   transition: 'all 150ms ease'
@@ -259,7 +259,7 @@ export function ENSIdentityModal({
                 }}
                 onBlur={(e) => {
                   e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
-                  e.currentTarget.style.backgroundColor = '#1C1C26';
+                  e.currentTarget.style.backgroundColor = "var(--bg-elevated)";
                 }}
               />
             </div>
@@ -307,7 +307,7 @@ export function ENSIdentityModal({
               height: '48px',
               borderRadius: '50%',
               border: '3px solid rgba(255, 255, 255, 0.1)',
-              borderTopColor: '#7C5CFF',
+              borderTopColor: "var(--accent-primary)",
               animation: 'spin 1s linear infinite'
             }} />
             <p style={{
@@ -335,7 +335,7 @@ export function ENSIdentityModal({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: '#3DDC97',
+              backgroundColor: "var(--success)",
               color: 'white',
               fontSize: '32px'
             }}>
@@ -344,7 +344,7 @@ export function ENSIdentityModal({
             <p style={{
               fontSize: '16px',
               fontWeight: 600,
-              color: '#3DDC97'
+              color: "var(--success)"
             }}>
               Identity Verified
             </p>
@@ -392,7 +392,7 @@ export function ENSIdentityModal({
                 flex: 1,
                 height: '48px',
                 borderRadius: '14px',
-                backgroundColor: '#7C5CFF',
+                backgroundColor: "var(--accent-primary)",
                 border: 'none',
                 color: 'white',
                 fontSize: '15px',
@@ -408,7 +408,7 @@ export function ENSIdentityModal({
                 }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = '#7C5CFF';
+                e.currentTarget.style.backgroundColor = "var(--accent-primary)";
                 e.currentTarget.style.transform = 'translateY(0)';
               }}
             >

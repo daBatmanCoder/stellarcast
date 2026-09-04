@@ -1,87 +1,102 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { LiveRoom } from '@/lib/data/seed-rooms';
+import { IconButton } from './ui/IconButton';
+import { IconCollapse, IconExpand } from './ui/Icons';
+import { SidebarItem, SidebarSection } from './ui/SidebarItem';
 
 interface LeftRailProps {
   rooms: LiveRoom[];
+  recommended?: LiveRoom[];
   onSelectRoom: (room: LiveRoom) => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
 }
 
-export function LeftRail({ rooms, onSelectRoom }: LeftRailProps) {
+export function LeftRail({
+  rooms,
+  recommended = [],
+  onSelectRoom,
+  collapsed,
+  onToggleCollapse,
+}: LeftRailProps) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const liveRooms = rooms.filter((r) => r.isLive).slice(0, 8);
+  const discover = (recommended.length ? recommended : rooms.slice().sort((a, b) => b.viewers - a.viewers)).slice(0, 5);
+
   return (
     <aside
-      className="fixed left-0 bottom-0 overflow-y-auto left-rail-desktop"
+      className="left-rail-desktop scroll-y"
+      aria-label="Channels"
       style={{
-        top: '48px',
-        width: '190px',
-        backgroundColor: 'var(--elevated)',
-        borderRight: '1px solid var(--border)'
+        position: 'fixed',
+        top: 'var(--nav-height)',
+        left: 0,
+        bottom: 0,
+        width: collapsed ? 'var(--sidebar-collapsed)' : 'var(--sidebar-width)',
+        background: 'var(--bg-surface)',
+        borderRight: '1px solid var(--border-subtle)',
+        zIndex: 40,
+        transition: 'width var(--duration-hover) ease',
+        display: mounted ? undefined : undefined,
       }}
     >
-      <div className="p-3 border-b" style={{ borderColor: 'var(--border)' }}>
-        <h2 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-          Live Channels
-        </h2>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          height: 44,
+          padding: collapsed ? 0 : '0 8px 0 12px',
+          borderBottom: '1px solid var(--border-subtle)',
+        }}
+      >
+        {!collapsed && (
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Discover
+          </span>
+        )}
+        <IconButton
+          label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          tooltip={collapsed ? 'Expand' : 'Collapse'}
+          tooltipSide={collapsed ? 'right' : 'top'}
+          onClick={onToggleCollapse}
+        >
+          {collapsed ? <IconExpand size={18} /> : <IconCollapse size={18} />}
+        </IconButton>
       </div>
 
-      <div className="py-2">
-        {rooms.slice(0, 10).map((room) => (
-          <button
-            key={room.id}
-            onClick={() => onSelectRoom(room)}
-            className="w-full px-3 py-2 flex items-center gap-3 hover:bg-[var(--surface)] transition-colors"
-          >
-            {/* Avatar placeholder */}
-            <div
-              className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-semibold"
-              style={{
-                backgroundColor: 'var(--accent)',
-                color: 'white'
-              }}
-            >
-              {room.host.slice(2, 4).toUpperCase()}
-            </div>
-
-            <div className="flex-1 min-w-0 text-left">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                  {room.hostDisplayName || `${room.host.slice(0, 6)}...${room.host.slice(-4)}`}
-                </p>
-                <span
-                  className="flex-shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase"
-                  style={{
-                    backgroundColor: 'var(--live)',
-                    color: 'white'
-                  }}
-                >
-                  LIVE
-                </span>
-              </div>
-              <p className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
-                {room.category}
-              </p>
-              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                {room.viewers.toLocaleString()} viewers
-              </p>
-            </div>
-          </button>
+      <SidebarSection title="Live channels" collapsed={collapsed}>
+        {liveRooms.map((room) => (
+          <SidebarItem key={room.id} room={room} collapsed={collapsed} onSelect={onSelectRoom} />
         ))}
-      </div>
+      </SidebarSection>
 
-      {/* Demo badge */}
-      <div className="absolute bottom-0 left-0 right-0 p-3 border-t" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--elevated)' }}>
-        <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-          Demo rooms for hackathon
-        </p>
-      </div>
+      <SidebarSection title="Popular" collapsed={collapsed}>
+        {discover.map((room) => (
+          <SidebarItem key={`rec-${room.id}`} room={room} collapsed={collapsed} onSelect={onSelectRoom} />
+        ))}
+      </SidebarSection>
 
-      <style jsx>{`
-        @media (max-width: 768px) {
-          .left-rail-desktop {
-            display: none;
-          }
-        }
-      `}</style>
+      {!collapsed && (
+        <div
+          style={{
+            position: 'sticky',
+            bottom: 0,
+            padding: 12,
+            borderTop: '1px solid var(--border-subtle)',
+            background: 'var(--bg-surface)',
+            marginTop: 'auto',
+          }}
+        >
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>
+            Demo rooms for hackathon presentation
+          </p>
+        </div>
+      )}
     </aside>
   );
 }

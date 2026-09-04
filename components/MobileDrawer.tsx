@@ -3,6 +3,9 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { LiveRoom } from '@/lib/data/seed-rooms';
+import { IconButton } from './ui/IconButton';
+import { IconClose } from './ui/Icons';
+import { SidebarItem, SidebarSection } from './ui/SidebarItem';
 
 interface MobileDrawerProps {
   isOpen: boolean;
@@ -28,162 +31,73 @@ export function MobileDrawer({ isOpen, onClose, rooms, onSelectRoom }: MobileDra
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined') return null;
 
   const handleRoomClick = (room: LiveRoom) => {
     onSelectRoom(room);
     onClose();
   };
 
-  const drawerContent = (
+  return createPortal(
     <>
-      {/* Overlay */}
       <div
         onClick={onClose}
+        aria-hidden
         style={{
           position: 'fixed',
-          top: 0,
-          right: 0,
-          bottom: 0,
-          left: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.72)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-          zIndex: 1000
+          inset: 0,
+          background: 'rgba(0, 0, 0, 0.72)',
+          zIndex: 1000,
         }}
       />
 
-      {/* Drawer */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Channels"
         style={{
           position: 'fixed',
           top: 0,
           left: 0,
           bottom: 0,
-          width: 'min(320px, 86vw)',
-          backgroundColor: 'var(--elevated)',
+          width: 'min(280px, 86vw)',
+          background: 'var(--bg-surface)',
           zIndex: 1010,
           overflowY: 'auto',
-          paddingTop: '48px',
-          animation: 'slideIn 280ms ease-out'
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        <div style={{ padding: '16px 12px', borderBottom: '1px solid var(--border)' }}>
-          <h2 style={{ 
-            fontSize: '13px', 
-            fontWeight: 600, 
-            color: 'var(--text-secondary)', 
-            textTransform: 'uppercase', 
-            letterSpacing: '0.05em' 
-          }}>
-            Live Channels
-          </h2>
+        <div
+          style={{
+            height: 'var(--nav-height)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 8px 0 12px',
+            borderBottom: '1px solid var(--border-subtle)',
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: 14, fontWeight: 700 }}>Channels</span>
+          <IconButton label="Close menu" onClick={onClose}>
+            <IconClose size={18} />
+          </IconButton>
         </div>
 
-        <div style={{ paddingTop: '8px', paddingBottom: '8px' }}>
-          {rooms.slice(0, 10).map((room) => (
-            <button
-              key={room.id}
-              onClick={() => handleRoomClick(room)}
-              style={{
-                width: '100%',
-                height: '48px',
-                padding: '0 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                border: 'none',
-                background: 'none',
-                cursor: 'pointer',
-                color: 'inherit',
-                transition: 'background 150ms'
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-            >
-              {/* Avatar */}
-              <div
-                style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '50%',
-                  flexShrink: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  backgroundColor: 'var(--accent)',
-                  color: 'white'
-                }}
-              >
-                {room.host.slice(2, 4).toUpperCase()}
-              </div>
-
-              <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <p style={{ 
-                    fontSize: '14px', 
-                    fontWeight: 500, 
-                    color: 'var(--text-primary)', 
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flex: 1
-                  }}>
-                    {room.hostDisplayName || `${room.host.slice(0, 6)}...${room.host.slice(-4)}`}
-                  </p>
-                  <span
-                    style={{
-                      flexShrink: 0,
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      fontSize: '9px',
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      backgroundColor: 'var(--live)',
-                      color: 'white'
-                    }}
-                  >
-                    LIVE
-                  </span>
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>
-                  {room.category} · {room.viewers.toLocaleString()}
-                </p>
-              </div>
-            </button>
+        <SidebarSection title="Live channels">
+          {rooms.slice(0, 12).map((room) => (
+            <SidebarItem key={room.id} room={room} onSelect={handleRoomClick} />
           ))}
-        </div>
+        </SidebarSection>
 
-        {/* Demo badge */}
-        <div style={{ 
-          position: 'absolute', 
-          bottom: 0, 
-          left: 0, 
-          right: 0, 
-          padding: '12px', 
-          borderTop: '1px solid var(--border)', 
-          backgroundColor: 'var(--elevated)' 
-        }}>
-          <p style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
-            Demo rooms for hackathon
+        <div style={{ marginTop: 'auto', padding: 12, borderTop: '1px solid var(--border-subtle)' }}>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>
+            Demo rooms for hackathon presentation
           </p>
         </div>
       </div>
-
-      <style>{`
-        @keyframes slideIn {
-          from {
-            transform: translateX(-100%);
-          }
-          to {
-            transform: translateX(0);
-          }
-        }
-      `}</style>
-    </>
+    </>,
+    document.body
   );
-
-  return createPortal(drawerContent, document.body);
 }

@@ -52,7 +52,7 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
         right: 0,
         height: '4px',
         backgroundColor: 'var(--live)',
-        borderRadius: '24px 24px 0 0'
+        borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0'
       }} />
 
       {/* Close button */}
@@ -70,7 +70,7 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
           borderRadius: '8px',
           backgroundColor: 'transparent',
           border: 'none',
-          color: 'rgba(255, 255, 255, 0.48)',
+          color: 'var(--text-muted)',
           cursor: 'pointer',
           transition: 'all 150ms ease'
         }}
@@ -92,7 +92,7 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
           fontSize: '22px', 
           lineHeight: '28px', 
           fontWeight: 700,
-          color: '#FFFFFF',
+          color: 'var(--text-primary)',
           marginBottom: '8px'
         }}>
           Go Live
@@ -125,7 +125,7 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
             </span>
             <span style={{ fontSize: '12px', color: 'var(--success)' }}>✓</span>
           </div>
-          <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'rgba(255, 255, 255, 0.48)' }}>
+          <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
             Stealth meta-address: {metaAddress.slice(0, 18)}...{metaAddress.slice(-16)}
           </p>
         </div>
@@ -152,7 +152,7 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
               borderRadius: '12px',
               backgroundColor: 'rgba(255, 255, 255, 0.05)',
               border: '1px solid rgba(255, 255, 255, 0.12)',
-              color: '#FFFFFF',
+              color: 'var(--text-primary)',
               fontSize: '14px',
               outline: 'none'
             }}
@@ -181,7 +181,7 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
               borderRadius: '12px',
               backgroundColor: 'rgba(255, 255, 255, 0.05)',
               border: '1px solid rgba(255, 255, 255, 0.12)',
-              color: '#FFFFFF',
+              color: 'var(--text-primary)',
               fontSize: '14px',
               outline: 'none',
               cursor: 'pointer'
@@ -190,7 +190,7 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
             onBlur={(e) => e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'}
           >
             {categories.map(cat => (
-              <option key={cat} value={cat} style={{ backgroundColor: '#16161D' }}>
+              <option key={cat} value={cat} style={{ backgroundColor: "var(--bg-surface)" }}>
                 {cat}
               </option>
             ))}

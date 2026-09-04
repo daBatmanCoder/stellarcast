@@ -1,209 +1,206 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { SearchBar } from './ui/SearchBar';
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
+import { IconBrowse, IconInbox, IconLive, IconMenu } from './ui/Icons';
+import { truncateAddress } from '@/lib/utils/asset';
 
 interface TopNavProps {
   isConnected: boolean;
   address?: string;
   verifiedEnsName?: string;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
+  unreadCount?: number;
   onConnect: () => void;
   onMenuToggle?: () => void;
   onGoLive?: () => void;
+  onInboxToggle?: () => void;
+  onBrowse?: () => void;
 }
 
-function MenuIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-export function TopNav({ isConnected, address, verifiedEnsName, onConnect, onMenuToggle, onGoLive }: TopNavProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isMobile, setIsMobile] = useState(() => 
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
-  );
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(max-width: 768px)');
-    setIsMobile(mediaQuery.matches);
-    
-    const handleChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, []);
-
+export function TopNav({
+  isConnected,
+  address,
+  verifiedEnsName,
+  searchQuery,
+  onSearchChange,
+  unreadCount = 0,
+  onConnect,
+  onMenuToggle,
+  onGoLive,
+  onInboxToggle,
+  onBrowse,
+}: TopNavProps) {
   return (
     <nav
-      className="fixed top-0 left-0 right-0 z-50 flex items-center px-4 gap-3"
+      aria-label="Primary"
       style={{
-        height: '48px',
-        backgroundColor: 'var(--elevated)',
-        borderBottom: '1px solid var(--border)'
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+        height: 'var(--nav-height)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '0 12px',
+        background: 'var(--bg-surface)',
+        borderBottom: '1px solid var(--border-subtle)',
       }}
     >
-      {/* Hamburger menu - mobile only */}
-      <button
-        onClick={onMenuToggle}
-        className="flex items-center justify-center"
-        style={{
-          display: isMobile ? 'flex' : 'none',
-          width: '44px',
-          height: '44px',
-          border: 'none',
-          background: 'none',
-          cursor: 'pointer',
-          color: 'var(--text-primary)',
-          borderRadius: '8px',
-          transition: 'background 150ms'
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface)'}
-        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-        aria-label="Menu"
-      >
-        <MenuIcon />
-      </button>
-
-      {/* Logo */}
-      <div className="flex items-center gap-2">
-        <div
-          className="rounded flex items-center justify-center font-bold text-white"
-          style={{ 
-            backgroundColor: 'var(--accent)',
-            width: isMobile ? '32px' : '32px',
-            height: isMobile ? '32px' : '32px',
-            fontSize: isMobile ? '12px' : '14px'
-          }}
+      {/* Left */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 0' }}>
+        <IconButton
+          label="Open menu"
+          className="nav-mobile-only"
+          onClick={onMenuToggle}
+          style={{ display: undefined }}
         >
-          S
-        </div>
-        <span 
-          className="font-bold" 
-          style={{ 
-            color: 'var(--text-primary)',
-            fontSize: isMobile ? '14px' : '18px'
-          }}
-        >
-          STELLARCAST
-        </span>
-      </div>
+          <IconMenu size={20} />
+        </IconButton>
 
-      {/* Browse - desktop only */}
-      <button
-        className="px-3 py-1.5 text-sm font-medium hover:bg-[var(--surface)] rounded transition-colors"
-        style={{ 
-          color: 'var(--text-primary)',
-          display: isMobile ? 'none' : 'block'
-        }}
-      >
-        Browse
-      </button>
-
-      {/* Search (centered) - desktop / compact on mobile */}
-      <div className="flex-1 max-w-md mx-auto search-container">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search"
-          className="w-full px-4 py-1.5 rounded text-sm"
-          style={{
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            color: 'var(--text-primary)',
-            outline: 'none'
-          }}
-        />
-      </div>
-
-      {/* Actions right */}
-      <div className="flex items-center gap-2">
-        {/* Go Live button - shown when connected */}
-        {isConnected && onGoLive && (
-          <button
-            onClick={onGoLive}
-            className="rounded font-semibold transition-colors"
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <div
+            aria-hidden
             style={{
-              height: '44px',
-              padding: isMobile ? '0 12px' : '0 16px',
-              backgroundColor: 'var(--live)',
-              color: 'white',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: isMobile ? '13px' : '14px',
+              width: 30,
+              height: 30,
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--accent-primary)',
+              color: '#fff',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = '0.9';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = '1';
+              justifyContent: 'center',
+              fontWeight: 700,
+              fontSize: 14,
+              flexShrink: 0,
             }}
           >
-            <span style={{ fontSize: '16px' }}>●</span>
-            {!isMobile && 'Go Live'}
-          </button>
+            S
+          </div>
+          <span
+            className="nav-brand-text"
+            style={{ fontWeight: 700, fontSize: 16, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}
+          >
+            STELLARCAST
+          </span>
+        </div>
+
+        <button
+          type="button"
+          className="nav-desktop-only btn btn-ghost"
+          onClick={onBrowse}
+          style={{ height: 32, padding: '0 10px', fontSize: 14, fontWeight: 600 }}
+        >
+          <IconBrowse size={16} />
+          Browse
+        </button>
+      </div>
+
+      {/* Center search */}
+      <div
+        className="nav-search"
+        style={{
+          flex: '0 1 420px',
+          display: 'flex',
+          justifyContent: 'center',
+          minWidth: 0,
+        }}
+      >
+        <SearchBar value={searchQuery} onChange={onSearchChange} placeholder="Search streams or categories" />
+      </div>
+
+      {/* Right */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: 6,
+          flex: '1 1 0',
+          minWidth: 0,
+        }}
+      >
+        {onInboxToggle && (
+          <div style={{ position: 'relative' }}>
+            <IconButton label="Inbox" tooltip="Access inbox" onClick={onInboxToggle}>
+              <IconInbox size={18} />
+            </IconButton>
+            {unreadCount > 0 && (
+              <span
+                aria-label={`${unreadCount} unread`}
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  right: 2,
+                  minWidth: 16,
+                  height: 16,
+                  borderRadius: 8,
+                  background: 'var(--live)',
+                  color: '#fff',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '0 4px',
+                  pointerEvents: 'none',
+                }}
+              >
+                {unreadCount}
+              </span>
+            )}
+          </div>
+        )}
+
+        {isConnected && onGoLive && (
+          <Button variant="live" size="sm" onClick={onGoLive} className="nav-go-live">
+            <IconLive size={14} />
+            <span className="nav-desktop-only">Go Live</span>
+          </Button>
         )}
 
         {isConnected && address ? (
           <div
-            className="flex items-center gap-2 rounded"
-            style={{ 
-              backgroundColor: 'var(--surface)',
-              padding: isMobile ? '6px 10px' : '6px 12px',
-              fontSize: isMobile ? '11px' : '14px'
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              height: 32,
+              padding: '0 10px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-subtle)',
+              maxWidth: 180,
             }}
           >
-            <div
-              className="rounded-full"
-              style={{ 
-                backgroundColor: 'var(--success)',
-                width: '8px',
-                height: '8px'
-              }}
-            ></div>
-            {verifiedEnsName ? (
-              <div className="flex items-center gap-1">
-                <span className="font-semibold" style={{ color: 'var(--accent)' }}>
-                  {verifiedEnsName}
-                </span>
-                <span style={{ color: 'var(--success)', fontSize: '12px' }}>
-                  ✓
-                </span>
-              </div>
-            ) : (
-              <span className="mono" style={{ color: 'var(--text-secondary)' }}>
-                {address.slice(0, 6)}...{address.slice(-4)}
-              </span>
-            )}
+            <span className="status-dot" style={{ background: 'var(--success)' }} aria-hidden />
+            <span className="truncate-1" style={{ fontSize: 13, fontWeight: 600 }}>
+              {verifiedEnsName || truncateAddress(address)}
+            </span>
           </div>
         ) : (
-          <button
-            onClick={onConnect}
-            className="rounded font-semibold transition-colors"
-            style={{
-              height: '44px',
-              padding: isMobile ? '0 12px' : '0 16px',
-              backgroundColor: 'var(--accent)',
-              color: 'white',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: isMobile ? '13px' : '14px'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = 'var(--accent)';
-            }}
-          >
+          <Button variant="primary" size="sm" onClick={onConnect}>
             Connect
-          </button>
+          </Button>
         )}
       </div>
+
+      <style>{`
+        .nav-mobile-only { display: none !important; }
+        @media (max-width: 1023px) {
+          .nav-mobile-only { display: inline-flex !important; }
+          .nav-desktop-only { display: none !important; }
+          .nav-search { flex: 1 1 auto; max-width: none; }
+        }
+        @media (max-width: 640px) {
+          .nav-brand-text { display: none; }
+          .nav-go-live span { display: none; }
+        }
+      `}</style>
     </nav>
   );
 }

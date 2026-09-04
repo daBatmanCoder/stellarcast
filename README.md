@@ -4,6 +4,7 @@ A futuristic pay-to-view livestream platform where viewers pay for exclusive con
 
 **[Live Demo on GitHub Pages](https://dabatmancoder.github.io/stellarcast/)** _(deployed automatically)_
 
+
 ## Concept
 
 **The Problem:** Traditional livestream platforms require public wallet addresses for payment, exposing viewer identities and creating permanent on-chain spending records.

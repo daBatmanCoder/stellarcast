@@ -2,6 +2,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import type { LiveRoom } from '@/lib/data/seed-rooms';
+import { formatViewerCount, hostInitials, truncateAddress } from '@/lib/utils/asset';
+import { Avatar } from './ui/Avatar';
+import { LiveBadge, Tag } from './ui/Badges';
+import { Button } from './ui/Button';
+import { IconButton } from './ui/IconButton';
+import { IconChevronLeft, IconClose, IconPanel, IconWarning } from './ui/Icons';
 
 interface RoomViewProps {
   room: LiveRoom;
@@ -16,62 +22,58 @@ export function RoomView({ room, roomCredential, onLeave }: RoomViewProps) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string>('');
-  const [mounted, setMounted] = useState(false);
-  
+  const [panelOpen, setPanelOpen] = useState(true);
+
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const localStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     initializeConnection();
-
     return () => {
       cleanup();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream, remoteStream]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+  }, [remoteStream]);
 
   const initializeConnection = async () => {
     try {
-      // Get local media stream
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
-        audio: true
+        audio: true,
       });
+      localStreamRef.current = stream;
       setLocalStream(stream);
-      
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
 
-      // Create peer connection
       const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' }
-        ]
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
       });
 
       peerConnectionRef.current = pc;
 
-      // Add local tracks to peer connection
-      stream.getTracks().forEach(track => {
+      stream.getTracks().forEach((track) => {
         pc.addTrack(track, stream);
       });
 
-      // Handle remote stream
       pc.ontrack = (event) => {
         if (event.streams && event.streams[0]) {
           setRemoteStream(event.streams[0]);
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = event.streams[0];
-          }
         }
       };
 
-      // Monitor connection state
       pc.onconnectionstatechange = () => {
         const state = pc.connectionState;
         if (state === 'connected') {
@@ -86,8 +88,7 @@ export function RoomView({ room, roomCredential, onLeave }: RoomViewProps) {
         }
       };
 
-      // Note: Full signaling requires a server
-      // This demo shows ready state with real peer connection
+      // Demo: local preview ready without signaling server
       setConnectionState('connected');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to initialize stream');
@@ -96,12 +97,8 @@ export function RoomView({ room, roomCredential, onLeave }: RoomViewProps) {
   };
 
   const cleanup = () => {
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-    }
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-    }
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
+    peerConnectionRef.current?.close();
   };
 
   const handleLeave = () => {
@@ -109,228 +106,218 @@ export function RoomView({ room, roomCredential, onLeave }: RoomViewProps) {
     onLeave();
   };
 
+  const hostLabel = room.hostDisplayName || truncateAddress(room.host);
+
   return (
-    <div className="fixed inset-0 z-50" style={{ backgroundColor: 'var(--base)' }}>
-      {/* Top bar */}
-      <div
-        className="fixed top-0 left-0 right-0 h-12 px-4 flex items-center justify-between z-10"
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 60,
+        background: 'var(--bg-body)',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <header
         style={{
-          backgroundColor: 'rgba(0,0,0,0.8)',
-          backdropFilter: 'blur(10px)'
+          height: 'var(--nav-height)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          padding: '0 12px',
+          background: 'var(--bg-surface)',
+          borderBottom: '1px solid var(--border-subtle)',
+          flexShrink: 0,
         }}
       >
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleLeave}
-            className="text-sm font-medium hover:text-[var(--accent)] transition-colors"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            ← Leave
-          </button>
-
-          <div className="flex items-center gap-2">
-            <span
-              className="px-2 py-0.5 rounded text-xs font-bold uppercase"
-              style={{
-                backgroundColor: connectionState === 'connected' ? 'var(--live)' : 'var(--warn)',
-                color: 'white'
-              }}
-            >
-              {connectionState === 'connected' ? 'LIVE' : connectionState.toUpperCase()}
-            </span>
-            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-              {room.title}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-            {room.viewers.toLocaleString()} viewers
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <Button variant="ghost" size="sm" onClick={handleLeave}>
+            <IconChevronLeft size={16} />
+            Leave
+          </Button>
+          {connectionState === 'connected' ? <LiveBadge /> : (
+            <span className="tag-pill" style={{ textTransform: 'uppercase' }}>{connectionState}</span>
+          )}
+          <span className="truncate-1" style={{ fontSize: 14, fontWeight: 600 }}>
+            {room.title}
           </span>
-          
-          <div className="flex items-center gap-2">
-            <div
-              className="w-2 h-2 rounded-full"
-              style={{
-                backgroundColor: connectionState === 'connected' ? 'var(--success)' : 
-                                 connectionState === 'connecting' ? 'var(--warn)' : 
-                                 'var(--live)'
-              }}
-            ></div>
-            <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-              {connectionState === 'connected' ? 'Connected' :
-               connectionState === 'connecting' ? 'Connecting...' :
-               'Disconnected'}
-            </span>
-          </div>
         </div>
-      </div>
 
-      {/* Main video area */}
-      <div className="pt-12 h-full flex">
-        {/* Remote stream (or local preview if no remote) */}
-        <div className="flex-1 relative bg-black">
-          {remoteStream ? (
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              className="w-full h-full object-contain"
-            />
-          ) : localStream ? (
-            <video
-              ref={localVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full h-full object-contain"
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center space-y-4">
-                <div
-                  className="w-16 h-16 mx-auto rounded-full"
-                  style={{
-                    border: '3px solid var(--surface)',
-                    borderTopColor: 'var(--accent)',
-                    animation: 'spin 1s linear infinite'
-                  }}
-                ></div>
-                <p style={{ color: 'var(--text-secondary)' }}>
-                  Initializing stream...
-                </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            {formatViewerCount(room.viewers)} viewers
+          </span>
+          <IconButton
+            label={panelOpen ? 'Hide session panel' : 'Show session panel'}
+            onClick={() => setPanelOpen((v) => !v)}
+            active={panelOpen}
+          >
+            <IconPanel size={18} />
+          </IconButton>
+        </div>
+      </header>
+
+      <div className="watch-layout" style={{ flex: 1, minHeight: 0 }}>
+        <div className="watch-player-column">
+          <div style={{ position: 'relative', background: '#000', aspectRatio: '16 / 9', width: '100%' }}>
+            {remoteStream ? (
+              <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            ) : localStream ? (
+              <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-contain" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            ) : (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div
+                    className="spin"
+                    style={{
+                      width: 40,
+                      height: 40,
+                      margin: '0 auto 12px',
+                      borderRadius: '50%',
+                      border: '2px solid var(--bg-elevated)',
+                      borderTopColor: 'var(--accent-primary)',
+                    }}
+                  />
+                  <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Initializing stream…</p>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Local preview (picture-in-picture) */}
-          {localStream && remoteStream && (
-            <div className="absolute bottom-4 right-4 w-48 h-36 rounded-lg overflow-hidden border-2" style={{ borderColor: 'var(--border)' }}>
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-            </div>
-          )}
-
-          {/* Error overlay */}
-          {error && (
-            <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
+            {localStream && remoteStream && (
               <div
-                className="max-w-md p-6 rounded-lg text-center space-y-4"
-                style={{ backgroundColor: 'var(--elevated)' }}
-              >
-                <div className="text-4xl">⚠️</div>
-                <p className="font-semibold" style={{ color: 'var(--live)' }}>
-                  Stream Error
-                </p>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                  {error}
-                </p>
-                <button
-                  onClick={handleLeave}
-                  className="px-4 py-2 rounded-lg font-medium"
-                  style={{
-                    backgroundColor: 'var(--surface)',
-                    color: 'var(--text-secondary)'
-                  }}
-                >
-                  Leave Room
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Connection info overlay */}
-          {connectionState === 'connecting' && !error && (
-            <div className="absolute top-20 left-4 right-4">
-              <div
-                className="p-4 rounded-lg"
                 style={{
-                  backgroundColor: 'rgba(0,0,0,0.8)',
-                  backdropFilter: 'blur(10px)'
+                  position: 'absolute',
+                  right: 12,
+                  bottom: 12,
+                  width: 160,
+                  aspectRatio: '16 / 9',
+                  borderRadius: 'var(--radius-md)',
+                  overflow: 'hidden',
+                  border: '1px solid var(--border-subtle)',
+                  background: '#000',
                 }}
               >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-8 h-8 rounded-full"
-                    style={{
-                      border: '2px solid var(--surface)',
-                      borderTopColor: 'var(--accent)',
-                      animation: 'spin 1s linear infinite'
-                    }}
-                  ></div>
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      Establishing peer connection...
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Note: Full signaling requires server deployment
-                    </p>
+                <video ref={localVideoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+            )}
+
+            {error && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(0,0,0,0.82)',
+                  padding: 16,
+                }}
+              >
+                <div className="surface" style={{ maxWidth: 360, padding: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color: 'var(--live)' }}>
+                    <IconWarning size={18} />
+                    <strong style={{ fontSize: 14 }}>Stream error</strong>
                   </div>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>{error}</p>
+                  <Button variant="secondary" size="sm" onClick={handleLeave}>
+                    Leave room
+                  </Button>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Room info */}
-          <div className="absolute bottom-4 left-4">
-            <div
-              className="p-4 rounded-lg space-y-2"
-              style={{
-                backgroundColor: 'rgba(0,0,0,0.8)',
-                backdropFilter: 'blur(10px)'
-              }}
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center font-semibold text-white"
-                  style={{ backgroundColor: 'var(--accent)' }}
-                >
-                  {room.host.slice(2, 4).toUpperCase()}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {room.hostDisplayName || `${room.host.slice(0, 8)}...`}
-                  </p>
-                  <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                    {room.category}
+          <div style={{ padding: 16, borderTop: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
+                <Avatar initials={hostInitials(room.host, room.hostDisplayName)} size={40} live={room.isLive} />
+                <div style={{ minWidth: 0 }}>
+                  <h1 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{room.title}</h1>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                    {hostLabel} · {room.category}
                   </p>
                 </div>
               </div>
-              
-              <div className="flex gap-2 flex-wrap">
-                {room.tags.map(tag => (
-                  <span
-                    key={tag}
-                    className="px-2 py-0.5 rounded text-xs"
-                    style={{
-                      backgroundColor: 'var(--elevated)',
-                      color: 'var(--text-secondary)'
-                    }}
-                  >
-                    {tag}
-                  </span>
-                ))}
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <Button variant="secondary" size="sm" onClick={handleLeave}>Leave</Button>
               </div>
-
-              <p className="text-[10px] mono truncate" style={{ color: 'var(--text-tertiary)' }}>
-                Access: {roomCredential.slice(0, 32)}...
-              </p>
             </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 12 }}>
+              {room.tags.map((tag) => (
+                <Tag key={tag}>{tag}</Tag>
+              ))}
+            </div>
+
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 12, lineHeight: 1.45 }}>
+              Private livestream access unlocked via stealth payment. Session status and access metadata are available in the side panel.
+            </p>
           </div>
         </div>
-      </div>
 
-      <style jsx>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
+        <aside className={`watch-side-panel ${panelOpen ? '' : 'collapsed'}`} aria-hidden={!panelOpen}>
+          {panelOpen && (
+            <>
+              <header
+                style={{
+                  height: 48,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0 12px',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  flexShrink: 0,
+                }}
+              >
+                <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Session</h2>
+                <IconButton label="Close panel" onClick={() => setPanelOpen(false)}>
+                  <IconClose size={16} />
+                </IconButton>
+              </header>
+
+              <div className="scroll-y" style={{ flex: 1, padding: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+                  <Row label="Status" value={connectionState} />
+                  <Row label="Viewers" value={formatViewerCount(room.viewers)} />
+                  <Row label="Category" value={room.category} />
+                  <Row label="Host" value={hostLabel} />
+                  <div>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 4px' }}>Access key</p>
+                    <p
+                      className="mono"
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--text-secondary)',
+                        background: 'var(--bg-elevated)',
+                        borderRadius: 'var(--radius-sm)',
+                        padding: 8,
+                        wordBreak: 'break-all',
+                        margin: 0,
+                      }}
+                    >
+                      {roomCredential}
+                    </p>
+                  </div>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+                    Full peer signaling requires a deployed signaling server. This demo shows local capture and peer connection setup.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+      <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+      <span style={{ color: 'var(--text-primary)', fontWeight: 600, textAlign: 'right' }}>{value}</span>
     </div>
   );
 }

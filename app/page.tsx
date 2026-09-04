@@ -1,36 +1,35 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useMetaMask } from '@/lib/wallet/useMetaMask';
 import { NetworkGuard } from '@/components/NetworkGuard';
-import { TopNav } from '@/components/TopNav';
-import { LeftRail } from '@/components/LeftRail';
+import { AppShell } from '@/components/AppShell';
 import { FeaturedCarousel } from '@/components/FeaturedCarousel';
 import { LiveGrid } from '@/components/LiveGrid';
+import { CategoryShelf } from '@/components/CategoryShelf';
 import { Inbox, type InboxMessage } from '@/components/Inbox';
 import { ENSIdentityModal } from '@/components/ENSIdentityModal';
 import { PaymentModal } from '@/components/PaymentModal';
 import { WalletConnect } from '@/components/WalletConnect';
 import { RoomView } from '@/components/RoomView';
-import { MobileDrawer } from '@/components/MobileDrawer';
 import { GoLiveModal } from '@/components/GoLiveModal';
-import { SEED_ROOMS, type LiveRoom } from '@/lib/data/seed-rooms';
+import { SEED_ROOMS, getCategoryStats, type LiveRoom } from '@/lib/data/seed-rooms';
 import type { StealthIdentity } from '@/lib/types/stealth';
 import { generateStealthAddress } from '@/lib/crypto/stealth';
-import { identityToMetaAddress } from '@/lib/crypto/identity';
 import { sendEthTransaction, waitForTransactionReceipt } from '@/lib/blockchain/transactions';
 import { storeENSVerification, getENSVerification } from '@/lib/storage/ens-store';
+import type { CategoryItem } from '@/components/ui/CategoryCard';
+
+const SIDEBAR_KEY = 'stellarcast-sidebar-collapsed';
 
 export default function Home() {
   const metamask = useMetaMask();
-  
-  // Auth state
+
   const [identity, setIdentity] = useState<StealthIdentity | null>(null);
   const [metaAddress, setMetaAddress] = useState<string>('');
   const [verifiedEnsName, setVerifiedEnsName] = useState<string>('');
   const [needsWalletConnect, setNeedsWalletConnect] = useState(false);
 
-  // UI state
   const [selectedRoom, setSelectedRoom] = useState<LiveRoom | null>(null);
   const [ensModalOpen, setEnsModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -39,12 +38,22 @@ export default function Home() {
   const [activeRoom, setActiveRoom] = useState<{ room: LiveRoom; credential: string } | null>(null);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [goLiveModalOpen, setGoLiveModalOpen] = useState(false);
-  
-  // Demo state
-  const [currentEnsForPayment, setCurrentEnsForPayment] = useState('');
-  const featuredRoom = SEED_ROOMS.find(r => r.isFeatured) || SEED_ROOMS[0];
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  // Check for existing verified ENS on mount
+  const [currentEnsForPayment, setCurrentEnsForPayment] = useState('');
+  const featuredRoom = SEED_ROOMS.find((r) => r.isFeatured) || SEED_ROOMS[0];
+
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem(SIDEBAR_KEY);
+      if (stored === '1') setSidebarCollapsed(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     const checkExistingENS = async () => {
       if (metamask.isConnected && metamask.address) {
@@ -56,6 +65,35 @@ export default function Home() {
     };
     checkExistingENS();
   }, [metamask.isConnected, metamask.address]);
+
+  const filteredRooms = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return SEED_ROOMS.filter((room) => {
+      if (categoryFilter && room.category !== categoryFilter) return false;
+      if (!q) return true;
+      return (
+        room.title.toLowerCase().includes(q) ||
+        room.category.toLowerCase().includes(q) ||
+        room.tags.some((t) => t.toLowerCase().includes(q)) ||
+        (room.hostDisplayName || '').toLowerCase().includes(q) ||
+        room.host.toLowerCase().includes(q)
+      );
+    });
+  }, [searchQuery, categoryFilter]);
+
+  const categories = useMemo(() => getCategoryStats(SEED_ROOMS), []);
+
+  const handleToggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        sessionStorage.setItem(SIDEBAR_KEY, next ? '1' : '0');
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   const handleIdentityReady = (userIdentity: StealthIdentity, userMetaAddress: string, ensName?: string) => {
     setIdentity(userIdentity);
@@ -86,7 +124,6 @@ export default function Home() {
   };
 
   const handleENSVerified = async (ensName: string, signature: string, message: string) => {
-    // Store verified ENS
     if (metamask.address) {
       await storeENSVerification({
         walletAddress: metamask.address,
@@ -94,15 +131,14 @@ export default function Home() {
         chainId: 11155111,
         message,
         signature,
-        verifiedAt: new Date().toISOString()
+        verifiedAt: new Date().toISOString(),
       });
       setVerifiedEnsName(ensName);
     }
 
     setCurrentEnsForPayment(ensName);
     setEnsModalOpen(false);
-    
-    // Open payment modal
+
     setTimeout(() => {
       setPaymentModalOpen(true);
     }, 300);
@@ -113,48 +149,37 @@ export default function Home() {
       throw new Error('Missing payment requirements');
     }
 
-    // Get host's meta-address (from registry or demo)
     const { getDemoHostMetaAddress } = await import('@/lib/demo/host-meta-addresses');
     const { getProtocolAdapter } = await import('@/lib/protocol/adapters');
-    
+
     let hostMeta;
     try {
       const adapter = getProtocolAdapter();
       hostMeta = await adapter.getMetaAddress(selectedRoom.host);
-    } catch (e) {
-      // Fallback to demo meta-address if registry lookup fails
+    } catch {
       hostMeta = null;
     }
-    
+
     if (!hostMeta) {
-      // Use deterministic demo meta-address for seed hosts
       hostMeta = getDemoHostMetaAddress(selectedRoom.host);
     }
 
-    // Generate stealth address for the HOST (not viewer)
     const stealthPayment = generateStealthAddress(hostMeta);
     const stealthAddressHex = '0x' + Buffer.from(stealthPayment.stealthAddress).toString('hex');
 
-    // Send real payment on Sepolia
-    const txHash = await sendEthTransaction(
-      metamask.address,
-      stealthAddressHex,
-      '0.01'
-    );
+    const txHash = await sendEthTransaction(metamask.address, stealthAddressHex, '0.01');
 
-    // Wait for confirmation
     await waitForTransactionReceipt(txHash);
 
-    return { 
-      txHash, 
-      sharedSecret: stealthPayment.sharedSecret 
+    return {
+      txHash,
+      sharedSecret: stealthPayment.sharedSecret,
     };
   };
 
-  const handlePaymentSuccess = async (txHash: string, sharedSecret: Uint8Array) => {
+  const handlePaymentSuccess = async (_txHash: string, sharedSecret: Uint8Array) => {
     if (!selectedRoom) return;
 
-    // Derive room credential from ECDH shared secret
     const { deriveAccessCredential } = await import('@/lib/crypto/credentials');
     const roomCredential = deriveAccessCredential(sharedSecret);
 
@@ -164,30 +189,25 @@ export default function Home() {
       roomTitle: selectedRoom.title,
       encryptedPassword: roomCredential,
       timestamp: new Date().toISOString(),
-      isRead: false
+      isRead: false,
     };
 
-    setInboxMessages(prev => [message, ...prev]);
+    setInboxMessages((prev) => [message, ...prev]);
     setPaymentModalOpen(false);
-    
-    // Auto-open inbox and show notification
+
     setTimeout(() => {
       setInboxOpen(true);
     }, 500);
   };
 
   const handleUsePassword = (message: InboxMessage) => {
-    // Mark as read
-    setInboxMessages(prev =>
-      prev.map(m => m.id === message.id ? { ...m, isRead: true } : m)
-    );
+    setInboxMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, isRead: true } : m)));
 
-    // Find the room
-    const room = SEED_ROOMS.find(r => r.id === message.roomId);
+    const room = SEED_ROOMS.find((r) => r.id === message.roomId);
     if (room) {
       setActiveRoom({
         room,
-        credential: message.encryptedPassword
+        credential: message.encryptedPassword,
       });
       setInboxOpen(false);
     }
@@ -198,7 +218,6 @@ export default function Home() {
   };
 
   const handleGoLive = () => {
-    // Check if connected and has identity
     if (!metamask.isConnected) {
       setNeedsWalletConnect(true);
       return;
@@ -211,11 +230,10 @@ export default function Home() {
   };
 
   const handleStartStream = (title: string, category: string) => {
-    // Create a host room and start streaming
     const hostRoom: LiveRoom = {
       id: `host-${Date.now()}`,
       host: metamask.address || '',
-      hostDisplayName: verifiedEnsName || `Host ${metamask.address?.slice(0,6)}`,
+      hostDisplayName: verifiedEnsName || `Host ${metamask.address?.slice(0, 6)}`,
       title,
       category,
       viewers: 1,
@@ -223,143 +241,119 @@ export default function Home() {
       isFeatured: false,
       isDemoSeed: false,
       thumbnail: '',
-      isLive: true
+      isLive: true,
     };
-    
+
     setGoLiveModalOpen(false);
     setActiveRoom({ room: hostRoom, credential: 'host-stream' });
   };
 
+  const handleSelectCategory = (category: CategoryItem) => {
+    setCategoryFilter(category.name);
+    setSearchQuery('');
+  };
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setCategoryFilter(null);
+  };
+
+  const unreadCount = inboxMessages.filter((m) => !m.isRead).length;
+  const showFeatured = !searchQuery && !categoryFilter;
+
   return (
     <NetworkGuard>
-      <div style={{ backgroundColor: 'var(--base)', minHeight: '100vh' }}>
-        {/* Top Nav */}
-        <TopNav
-          isConnected={metamask.isConnected}
-          address={metamask.address}
-          verifiedEnsName={verifiedEnsName}
-          onConnect={handleConnectClick}
-          onMenuToggle={() => setMobileDrawerOpen(true)}
-          onGoLive={() => setGoLiveModalOpen(true)}
-        />
+      <AppShell
+        rooms={SEED_ROOMS}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={handleToggleSidebar}
+        mobileDrawerOpen={mobileDrawerOpen}
+        onMobileDrawerChange={setMobileDrawerOpen}
+        onSelectRoom={handleRoomSelect}
+        searchQuery={searchQuery}
+        onSearchChange={(v) => {
+          setSearchQuery(v);
+          if (v) setCategoryFilter(null);
+        }}
+        isConnected={metamask.isConnected}
+        address={metamask.address}
+        verifiedEnsName={verifiedEnsName}
+        unreadCount={unreadCount}
+        onConnect={handleConnectClick}
+        onGoLive={handleGoLive}
+        onInboxToggle={() => setInboxOpen((v) => !v)}
+        onBrowse={clearFilters}
+        inboxOpen={inboxOpen}
+      >
+        {showFeatured && <FeaturedCarousel room={featuredRoom} onJoin={handleRoomSelect} />}
 
-        {/* Left Rail - Desktop only */}
-        <LeftRail
-          rooms={SEED_ROOMS}
+        <LiveGrid
+          rooms={filteredRooms}
           onSelectRoom={handleRoomSelect}
+          title={
+            categoryFilter
+              ? `${categoryFilter}`
+              : searchQuery
+                ? `Results for “${searchQuery}”`
+                : 'Live now'
+          }
+          emptyTitle="No streams match"
+          emptyDescription="Adjust your search or browse all live channels."
+          onClearFilters={clearFilters}
         />
 
-        {/* Mobile Drawer */}
-        <MobileDrawer
-          isOpen={mobileDrawerOpen}
-          onClose={() => setMobileDrawerOpen(false)}
-          rooms={SEED_ROOMS}
-          onSelectRoom={handleRoomSelect}
-        />
-
-        {/* Main Content */}
-        <main
-          className="main-content"
-          style={{
-            marginLeft: '190px',
-            paddingTop: '48px',
-            minHeight: '100vh'
-          }}
-        >
-          <div className="container-custom py-8">
-            {/* Featured Carousel */}
-            <FeaturedCarousel
-              room={featuredRoom}
-              onJoin={handleRoomSelect}
-            />
-
-            {/* Live Grid */}
-            <LiveGrid
-              rooms={SEED_ROOMS}
-              onSelectRoom={handleRoomSelect}
-            />
-
-            {/* Categories strip could go here */}
-            <div className="mt-12 space-y-4">
-              <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-                Categories
-              </h2>
-              <div className="flex gap-4 overflow-x-auto pb-4">
-                {['Science & Technology', 'Software Development', 'Finance', 'Art', 'Events', 'Community'].map((cat) => (
-                  <div
-                    key={cat}
-                    className="flex-shrink-0 w-32 h-44 rounded-lg flex items-end p-4 cursor-pointer hover:scale-105 transition-transform"
-                    style={{
-                      background: 'linear-gradient(135deg, var(--accent) 0%, var(--live) 100%)',
-                      opacity: 0.9
-                    }}
-                  >
-                    <p className="text-sm font-semibold text-white">
-                      {cat}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </main>
-
-        {/* Inbox */}
-        <Inbox
-          messages={inboxMessages}
-          isOpen={inboxOpen}
-          onToggle={() => setInboxOpen(!inboxOpen)}
-          onUsePassword={handleUsePassword}
-        />
-
-        {/* ENS Identity Modal */}
-        <ENSIdentityModal
-          isOpen={ensModalOpen}
-          room={selectedRoom}
-          walletAddress={metamask.address || ''}
-          onClose={() => {
-            setEnsModalOpen(false);
-            setSelectedRoom(null);
-          }}
-          onVerified={handleENSVerified}
-        />
-
-        {/* Payment Modal */}
-        <PaymentModal
-          isOpen={paymentModalOpen}
-          room={selectedRoom}
-          ensName={currentEnsForPayment}
-          onClose={() => {
-            setPaymentModalOpen(false);
-            setSelectedRoom(null);
-          }}
-          onPay={handlePayment}
-          onSuccess={handlePaymentSuccess}
-        />
-
-        {/* Room View (WebRTC Stream) */}
-        {activeRoom && (
-          <RoomView
-            room={activeRoom.room}
-            roomCredential={activeRoom.credential}
-            onLeave={handleLeaveRoom}
-          />
+        {showFeatured && (
+          <CategoryShelf categories={categories} onSelectCategory={handleSelectCategory} />
         )}
+      </AppShell>
 
-        {/* Go Live Modal */}
-        <GoLiveModal
-          isOpen={goLiveModalOpen}
-          ensName={verifiedEnsName}
-          metaAddress={metaAddress}
-          onClose={() => setGoLiveModalOpen(false)}
-          onStartStream={handleStartStream}
+      <Inbox
+        messages={inboxMessages}
+        isOpen={inboxOpen}
+        onToggle={() => setInboxOpen(!inboxOpen)}
+        onUsePassword={handleUsePassword}
+      />
+
+      <ENSIdentityModal
+        isOpen={ensModalOpen}
+        room={selectedRoom}
+        walletAddress={metamask.address || ''}
+        onClose={() => {
+          setEnsModalOpen(false);
+          setSelectedRoom(null);
+        }}
+        onVerified={handleENSVerified}
+      />
+
+      <PaymentModal
+        isOpen={paymentModalOpen}
+        room={selectedRoom}
+        ensName={currentEnsForPayment}
+        onClose={() => {
+          setPaymentModalOpen(false);
+          setSelectedRoom(null);
+        }}
+        onPay={handlePayment}
+        onSuccess={handlePaymentSuccess}
+      />
+
+      {activeRoom && (
+        <RoomView
+          room={activeRoom.room}
+          roomCredential={activeRoom.credential}
+          onLeave={handleLeaveRoom}
         />
+      )}
 
-        {/* Wallet Connect Overlay */}
-        {needsWalletConnect && (
-          <WalletConnect onIdentityReady={handleIdentityReady} />
-        )}
-      </div>
+      <GoLiveModal
+        isOpen={goLiveModalOpen}
+        ensName={verifiedEnsName}
+        metaAddress={metaAddress}
+        onClose={() => setGoLiveModalOpen(false)}
+        onStartStream={handleStartStream}
+      />
+
+      {needsWalletConnect && <WalletConnect onIdentityReady={handleIdentityReady} />}
     </NetworkGuard>
   );
 }
