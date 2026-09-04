@@ -355,6 +355,7 @@ export default function Home() {
           isOpen={goLiveModalOpen}
           ensName={verifiedEnsName}
           metaAddress={metaAddress}
+          walletAddress={metamask.address || ''}
           onClose={() => setGoLiveModalOpen(false)}
           onStartStream={handleStartStream}
         />

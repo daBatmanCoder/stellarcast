@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { ModalShell } from './ModalShell';
+import { resolveSepoliaENS } from '@/lib/ens/resolver';
+import { requestENSOwnershipSignature, verifyENSOwnership } from '@/lib/ens/ownership';
 
 function CloseIcon() {
   return (
@@ -11,17 +13,25 @@ function CloseIcon() {
   );
 }
 
+type Step = 'ens-verify' | 'stealth-setup' | 'stream-config';
+
 interface GoLiveModalProps {
   isOpen: boolean;
   ensName: string;
   metaAddress: string;
+  walletAddress: string;
   onClose: () => void;
   onStartStream: (title: string, category: string) => void;
 }
 
-export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStream }: GoLiveModalProps) {
+export function GoLiveModal({ isOpen, ensName, metaAddress, walletAddress, onClose, onStartStream }: GoLiveModalProps) {
+  const [step, setStep] = useState<Step>('ens-verify');
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('Science & Technology');
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState('');
+  const [ensVerified, setEnsVerified] = useState(false);
+  const [stealthMetaAddress, setStealthMetaAddress] = useState(metaAddress);
 
   const categories = [
     'Science & Technology',
@@ -36,15 +46,75 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
     'Other'
   ];
 
+  const handleVerifyENS = async () => {
+    setVerifying(true);
+    setError('');
+
+    try {
+      const resolvedAddress = await resolveSepoliaENS(ensName);
+      
+      if (!resolvedAddress) {
+        setError(`ENS name "${ensName}" not found on Sepolia`);
+        setVerifying(false);
+        return;
+      }
+
+      if (resolvedAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+        setError(`You don't own ${ensName}. Resolved to ${resolvedAddress.slice(0, 10)}...`);
+        setVerifying(false);
+        return;
+      }
+
+      const { message, signature } = await requestENSOwnershipSignature(ensName, walletAddress);
+      const isValid = await verifyENSOwnership(ensName, walletAddress, signature, message);
+
+      if (!isValid) {
+        setError('Signature verification failed');
+        setVerifying(false);
+        return;
+      }
+
+      setEnsVerified(true);
+      setStep('stealth-setup');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleDownloadRecipient = () => {
+    const recipientData = {
+      schemeId: 1,
+      stealthMetaAddress: stealthMetaAddress,
+      spendingPublicKey: stealthMetaAddress.slice(0, 68),
+      viewingPublicKey: '0x' + stealthMetaAddress.slice(68),
+      ens: ensName,
+      chainId: 11155111
+    };
+
+    const blob = new Blob([JSON.stringify(recipientData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${ensName}-recipient.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleStart = () => {
     if (title.trim()) {
       onStartStream(title, category);
     }
   };
 
+  const textRecordKey = 'eth.stellarcast.stealth';
+  const textRecordValue = stealthMetaAddress;
+
   return (
-    <ModalShell isOpen={isOpen} onClose={onClose} allowOverlayClose={true} mobileBottomSheet={true}>
-      {/* Accent rail */}
+    <ModalShell isOpen={isOpen} onClose={onClose} allowOverlayClose={step === 'ens-verify'} mobileBottomSheet={true}>
       <div style={{ 
         position: 'absolute',
         top: 0,
@@ -55,7 +125,6 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
         borderRadius: '24px 24px 0 0'
       }} />
 
-      {/* Close button */}
       <button
         onClick={onClose}
         style={{
@@ -86,7 +155,6 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
         <CloseIcon />
       </button>
 
-      {/* Header */}
       <div style={{ padding: '24px 24px 0' }}>
         <h2 style={{ 
           fontSize: '22px', 
@@ -95,152 +163,412 @@ export function GoLiveModal({ isOpen, ensName, metaAddress, onClose, onStartStre
           color: '#FFFFFF',
           marginBottom: '8px'
         }}>
-          Go Live
+          {step === 'ens-verify' ? 'Verify ENS Ownership' : 
+           step === 'stealth-setup' ? 'Stealth Payment Setup' : 
+           'Go Live'}
         </h2>
         <p style={{ 
           fontSize: '14px', 
           lineHeight: '20px',
           color: 'rgba(255, 255, 255, 0.64)'
         }}>
-          Start streaming with private stealth payments
+          {step === 'ens-verify' ? 'Prove you own your ENS name on Sepolia' :
+           step === 'stealth-setup' ? 'Set up private payments for your stream' :
+           'Configure your livestream'}
         </p>
       </div>
 
-      {/* Body */}
       <div style={{ padding: '20px 24px 0' }}>
-        {/* Identity Display */}
-        <div style={{
-          padding: '16px',
-          borderRadius: '12px',
-          backgroundColor: 'rgba(124, 92, 255, 0.1)',
-          border: '1px solid rgba(124, 92, 255, 0.3)',
-          marginBottom: '20px'
-        }}>
-          <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '8px' }}>
-            Your stream identity
-          </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent)' }}>
-              {ensName}
-            </span>
-            <span style={{ fontSize: '12px', color: 'var(--success)' }}>✓</span>
-          </div>
-          <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'rgba(255, 255, 255, 0.48)' }}>
-            Stealth meta-address: {metaAddress.slice(0, 18)}...{metaAddress.slice(-16)}
-          </p>
-        </div>
+        {step === 'ens-verify' && (
+          <>
+            <div style={{
+              padding: '16px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(124, 92, 255, 0.1)',
+              border: '1px solid rgba(124, 92, 255, 0.3)',
+              marginBottom: '16px'
+            }}>
+              <p style={{ fontSize: '13px', fontWeight: 600, color: '#7C5CFF', marginBottom: '8px' }}>
+                Your ENS Name
+              </p>
+              <p style={{ fontSize: '16px', fontWeight: 700, color: '#FFFFFF', marginBottom: '4px' }}>
+                {ensName}
+              </p>
+              <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.48)', fontFamily: 'monospace' }}>
+                {walletAddress}
+              </p>
+            </div>
 
-        {/* Stream Title */}
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{
-            display: 'block',
-            fontSize: '13px',
-            fontWeight: 600,
-            color: 'rgba(255, 255, 255, 0.88)',
-            marginBottom: '8px'
-          }}>
-            Stream Title
-          </label>
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="What are you streaming?"
-            style={{
-              width: '100%',
+            <div style={{
               padding: '12px',
               borderRadius: '12px',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              color: '#FFFFFF',
-              fontSize: '14px',
-              outline: 'none'
-            }}
-            onFocus={(e) => e.currentTarget.style.borderColor = 'var(--accent)'}
-            onBlur={(e) => e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'}
-          />
-        </div>
+              backgroundColor: 'rgba(0, 245, 147, 0.08)',
+              border: '1px solid rgba(0, 245, 147, 0.16)',
+              marginBottom: '16px'
+            }}>
+              <p style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.72)' }}>
+                We'll verify you own this ENS by:
+              </p>
+              <ul style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.64)', marginLeft: '20px', marginTop: '8px' }}>
+                <li>Resolving {ensName} on Sepolia</li>
+                <li>Confirming it points to your wallet</li>
+                <li>Requesting signature proof (personal_sign)</li>
+              </ul>
+            </div>
 
-        {/* Category */}
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{
-            display: 'block',
-            fontSize: '13px',
-            fontWeight: 600,
-            color: 'rgba(255, 255, 255, 0.88)',
-            marginBottom: '8px'
-          }}>
-            Category
-          </label>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            style={{
-              width: '100%',
+            {error && (
+              <div style={{
+                padding: '12px',
+                borderRadius: '12px',
+                backgroundColor: 'rgba(255, 92, 122, 0.1)',
+                border: '1px solid rgba(255, 92, 122, 0.3)',
+                marginBottom: '16px'
+              }}>
+                <p style={{ fontSize: '13px', color: '#FF5C7A' }}>
+                  {error}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+
+        {step === 'stealth-setup' && (
+          <>
+            <div style={{
+              padding: '16px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(0, 245, 147, 0.1)',
+              border: '1px solid rgba(0, 245, 147, 0.3)',
+              marginBottom: '16px'
+            }}>
+              <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--success)', marginBottom: '8px' }}>
+                ✓ ENS Verified: {ensName}
+              </p>
+              <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)' }}>
+                Ownership confirmed on Sepolia
+              </p>
+            </div>
+
+            <div style={{
+              padding: '16px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(124, 92, 255, 0.08)',
+              border: '1px solid rgba(124, 92, 255, 0.16)',
+              marginBottom: '16px'
+            }}>
+              <p style={{ fontSize: '13px', fontWeight: 600, color: '#7C5CFF', marginBottom: '8px' }}>
+                Stealth Meta-Address
+              </p>
+              <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'rgba(255, 255, 255, 0.72)', wordBreak: 'break-all', marginBottom: '8px' }}>
+                {stealthMetaAddress}
+              </p>
+              <button
+                onClick={handleDownloadRecipient}
+                style={{
+                  width: '100%',
+                  height: '40px',
+                  borderRadius: '10px',
+                  backgroundColor: 'rgba(124, 92, 255, 0.2)',
+                  border: '1px solid rgba(124, 92, 255, 0.4)',
+                  color: '#7C5CFF',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(124, 92, 255, 0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(124, 92, 255, 0.2)';
+                }}
+              >
+                <span>📥</span>
+                Download recipient.json
+              </button>
+              <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.48)', marginTop: '8px', textAlign: 'center' }}>
+                Keep this file offline - never upload to servers
+              </p>
+            </div>
+
+            <div style={{
+              padding: '16px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(255, 185, 0, 0.08)',
+              border: '1px solid rgba(255, 185, 0, 0.24)',
+              marginBottom: '16px'
+            }}>
+              <p style={{ fontSize: '13px', fontWeight: 600, color: '#FFB900', marginBottom: '12px' }}>
+                📝 Add to ENS Text Record
+              </p>
+              <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '12px' }}>
+                Set this text record so viewers can discover your payment address:
+              </p>
+              
+              <div style={{ marginBottom: '10px' }}>
+                <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.56)', marginBottom: '4px' }}>
+                  Key:
+                </p>
+                <div style={{
+                  padding: '8px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  fontFamily: 'monospace',
+                  fontSize: '11px',
+                  color: '#FFFFFF',
+                  wordBreak: 'break-all'
+                }}>
+                  {textRecordKey}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '12px' }}>
+                <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.56)', marginBottom: '4px' }}>
+                  Value:
+                </p>
+                <div style={{
+                  padding: '8px',
+                  borderRadius: '6px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  fontFamily: 'monospace',
+                  fontSize: '10px',
+                  color: '#FFFFFF',
+                  wordBreak: 'break-all'
+                }}>
+                  {textRecordValue}
+                </div>
+              </div>
+
+              <p style={{ fontSize: '11px', lineHeight: '16px', color: 'rgba(255, 255, 255, 0.56)' }}>
+                Visit <strong>app.ens.domains</strong> → Your Name → Records → Add Text Record. Paste the key and value above.
+              </p>
+            </div>
+          </>
+        )}
+
+        {step === 'stream-config' && (
+          <>
+            <div style={{
+              padding: '16px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(124, 92, 255, 0.1)',
+              border: '1px solid rgba(124, 92, 255, 0.3)',
+              marginBottom: '16px'
+            }}>
+              <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '8px' }}>
+                Your stream identity
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--accent)' }}>
+                  {ensName}
+                </span>
+                <span style={{ fontSize: '12px', color: 'var(--success)' }}>✓</span>
+              </div>
+              <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'rgba(255, 255, 255, 0.48)' }}>
+                Stealth: {stealthMetaAddress.slice(0, 18)}...{stealthMetaAddress.slice(-16)}
+              </p>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: 'rgba(255, 255, 255, 0.88)',
+                marginBottom: '8px'
+              }}>
+                Stream Title
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="What are you streaming?"
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: '#FFFFFF',
+                  fontSize: '14px',
+                  outline: 'none'
+                }}
+                onFocus={(e) => e.currentTarget.style.borderColor = 'var(--accent)'}
+                onBlur={(e) => e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'}
+              />
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: 'rgba(255, 255, 255, 0.88)',
+                marginBottom: '8px'
+              }}>
+                Category
+              </label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: '#FFFFFF',
+                  fontSize: '14px',
+                  outline: 'none',
+                  cursor: 'pointer'
+                }}
+                onFocus={(e) => e.currentTarget.style.borderColor = 'var(--accent)'}
+                onBlur={(e) => e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'}
+              >
+                {categories.map(cat => (
+                  <option key={cat} value={cat} style={{ backgroundColor: '#16161D' }}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{
+                display: 'block',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: 'rgba(255, 255, 255, 0.88)',
+                marginBottom: '8px'
+              }}>
+                Entry Price
+              </label>
+              <div style={{
+                padding: '12px',
+                borderRadius: '12px',
+                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                fontFamily: 'monospace',
+                fontSize: '16px',
+                fontWeight: 600,
+                color: '#FFFFFF'
+              }}>
+                0.001 ETH
+              </div>
+              <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.48)', marginTop: '6px' }}>
+                Default price on Sepolia
+              </p>
+            </div>
+
+            <div style={{
               padding: '12px',
               borderRadius: '12px',
-              backgroundColor: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              color: '#FFFFFF',
-              fontSize: '14px',
-              outline: 'none',
-              cursor: 'pointer'
-            }}
-            onFocus={(e) => e.currentTarget.style.borderColor = 'var(--accent)'}
-            onBlur={(e) => e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)'}
-          >
-            {categories.map(cat => (
-              <option key={cat} value={cat} style={{ backgroundColor: '#16161D' }}>
-                {cat}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Info */}
-        <div style={{
-          padding: '12px',
-          borderRadius: '12px',
-          backgroundColor: 'rgba(0, 245, 147, 0.1)',
-          border: '1px solid rgba(0, 245, 147, 0.3)',
-          marginBottom: '20px'
-        }}>
-          <p style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.80)' }}>
-            💡 Viewers will pay to your stealth meta-address. Each payment generates a unique stealth address, keeping transactions private.
-          </p>
-        </div>
+              backgroundColor: 'rgba(0, 245, 147, 0.1)',
+              border: '1px solid rgba(0, 245, 147, 0.3)'
+            }}>
+              <p style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.80)' }}>
+                💡 Viewers pay 0.001 ETH to your stealth meta-address. Each payment generates a unique stealth address for privacy.
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* CTA stack */}
       <div style={{ padding: '8px 24px 24px' }}>
-        <button
-          onClick={handleStart}
-          disabled={!title.trim()}
-          style={{
-            width: '100%',
-            height: '48px',
-            borderRadius: '14px',
-            backgroundColor: title.trim() ? 'var(--live)' : 'rgba(235, 4, 0, 0.5)',
-            border: 'none',
-            color: 'white',
-            fontSize: '15px',
-            fontWeight: 600,
-            cursor: title.trim() ? 'pointer' : 'not-allowed',
-            transition: 'all 150ms ease'
-          }}
-          onMouseEnter={(e) => {
-            if (title.trim()) {
-              e.currentTarget.style.opacity = '0.9';
-              e.currentTarget.style.transform = 'translateY(-1px)';
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = '1';
-            e.currentTarget.style.transform = 'translateY(0)';
-          }}
-        >
-          Start Streaming
-        </button>
+        {step === 'ens-verify' && (
+          <button
+            onClick={handleVerifyENS}
+            disabled={verifying}
+            style={{
+              width: '100%',
+              height: '48px',
+              borderRadius: '14px',
+              backgroundColor: verifying ? 'rgba(124, 92, 255, 0.5)' : '#7C5CFF',
+              border: 'none',
+              color: 'white',
+              fontSize: '15px',
+              fontWeight: 600,
+              cursor: verifying ? 'not-allowed' : 'pointer',
+              transition: 'all 150ms ease'
+            }}
+            onMouseEnter={(e) => {
+              if (!verifying) {
+                e.currentTarget.style.backgroundColor = '#6B4DEE';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!verifying) {
+                e.currentTarget.style.backgroundColor = '#7C5CFF';
+              }
+            }}
+          >
+            {verifying ? 'Verifying...' : 'Verify Ownership'}
+          </button>
+        )}
+
+        {step === 'stealth-setup' && (
+          <button
+            onClick={() => setStep('stream-config')}
+            style={{
+              width: '100%',
+              height: '48px',
+              borderRadius: '14px',
+              backgroundColor: '#7C5CFF',
+              border: 'none',
+              color: 'white',
+              fontSize: '15px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 150ms ease'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#6B4DEE';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#7C5CFF';
+            }}
+          >
+            Continue to Stream Setup
+          </button>
+        )}
+
+        {step === 'stream-config' && (
+          <button
+            onClick={handleStart}
+            disabled={!title.trim()}
+            style={{
+              width: '100%',
+              height: '48px',
+              borderRadius: '14px',
+              backgroundColor: title.trim() ? 'var(--live)' : 'rgba(235, 4, 0, 0.5)',
+              border: 'none',
+              color: 'white',
+              fontSize: '15px',
+              fontWeight: 600,
+              cursor: title.trim() ? 'pointer' : 'not-allowed',
+              transition: 'all 150ms ease'
+            }}
+            onMouseEnter={(e) => {
+              if (title.trim()) {
+                e.currentTarget.style.opacity = '0.9';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '1';
+              e.currentTarget.style.transform = 'translateY(0)';
+            }}
+          >
+            Start Streaming
+          </button>
+        )}
       </div>
     </ModalShell>
   );
