@@ -8,7 +8,7 @@ import { FeaturedCarousel } from '@/components/FeaturedCarousel';
 import { LiveGrid } from '@/components/LiveGrid';
 import { CategoryShelf } from '@/components/CategoryShelf';
 import { Inbox, type InboxMessage } from '@/components/Inbox';
-import { ENSIdentityModal } from '@/components/ENSIdentityModal';
+// ENSIdentityModal removed from viewer flow — wallet address is enough to pay
 import { PaymentModal } from '@/components/PaymentModal';
 import { WalletConnect } from '@/components/WalletConnect';
 import { RoomView } from '@/components/RoomView';
@@ -17,21 +17,21 @@ import { SEED_ROOMS, getCategoryStats, type LiveRoom } from '@/lib/data/seed-roo
 import type { StealthIdentity } from '@/lib/types/stealth';
 import { generateStealthAddress } from '@/lib/crypto/stealth';
 import { sendEthTransaction, waitForTransactionReceipt } from '@/lib/blockchain/transactions';
-import { storeENSVerification, getENSVerification } from '@/lib/storage/ens-store';
+import { getENSVerification, storeENSVerification } from '@/lib/storage/ens-store';
 import type { CategoryItem } from '@/components/ui/CategoryCard';
 
 const SIDEBAR_KEY = 'stellarcast-sidebar-collapsed';
+const ENTRY_PRICE_ETH = '0.001';
 
 export default function Home() {
   const metamask = useMetaMask();
 
-  const [identity, setIdentity] = useState<StealthIdentity | null>(null);
+  // Host stealth meta-address (from wallet connect identity) for Go Live receiving setup
   const [metaAddress, setMetaAddress] = useState<string>('');
   const [verifiedEnsName, setVerifiedEnsName] = useState<string>('');
   const [needsWalletConnect, setNeedsWalletConnect] = useState(false);
 
   const [selectedRoom, setSelectedRoom] = useState<LiveRoom | null>(null);
-  const [ensModalOpen, setEnsModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
@@ -42,7 +42,6 @@ export default function Home() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
-  const [currentEnsForPayment, setCurrentEnsForPayment] = useState('');
   const featuredRoom = SEED_ROOMS.find((r) => r.isFeatured) || SEED_ROOMS[0];
 
   useEffect(() => {
@@ -95,35 +94,20 @@ export default function Home() {
     });
   };
 
-  const handleIdentityReady = (userIdentity: StealthIdentity, userMetaAddress: string, ensName?: string) => {
-    setIdentity(userIdentity);
+  const handleIdentityReady = (_userIdentity: StealthIdentity, userMetaAddress: string, ensName?: string) => {
     setMetaAddress(userMetaAddress);
     if (ensName) {
       setVerifiedEnsName(ensName);
     }
     setNeedsWalletConnect(false);
-  };
 
-  const handleConnectClick = () => {
-    setNeedsWalletConnect(true);
-  };
-
-  const handleRoomSelect = (room: LiveRoom) => {
-    if (!metamask.isConnected) {
-      setNeedsWalletConnect(true);
-      return;
+    // If user connected because they selected a room, continue to payment
+    if (selectedRoom) {
+      setPaymentModalOpen(true);
     }
-
-    if (!identity) {
-      setNeedsWalletConnect(true);
-      return;
-    }
-
-    setSelectedRoom(room);
-    setEnsModalOpen(true);
   };
 
-  const handleENSVerified = async (ensName: string, signature: string, message: string) => {
+  const handleHostEnsVerified = async (ensName: string, signature: string, message: string) => {
     if (metamask.address) {
       await storeENSVerification({
         walletAddress: metamask.address,
@@ -133,19 +117,28 @@ export default function Home() {
         signature,
         verifiedAt: new Date().toISOString(),
       });
-      setVerifiedEnsName(ensName);
+    }
+    setVerifiedEnsName(ensName);
+  };
+
+  const handleConnectClick = () => {
+    setNeedsWalletConnect(true);
+  };
+
+  const handleRoomSelect = (room: LiveRoom) => {
+    if (!metamask.isConnected) {
+      setNeedsWalletConnect(true);
+      setSelectedRoom(room);
+      return;
     }
 
-    setCurrentEnsForPayment(ensName);
-    setEnsModalOpen(false);
-
-    setTimeout(() => {
-      setPaymentModalOpen(true);
-    }, 300);
+    // Viewer flow: wallet address is enough — skip ENS modal, go to payment
+    setSelectedRoom(room);
+    setPaymentModalOpen(true);
   };
 
   const handlePayment = async (): Promise<{ txHash: string; sharedSecret: Uint8Array }> => {
-    if (!identity || !selectedRoom || !metamask.address) {
+    if (!selectedRoom || !metamask.address) {
       throw new Error('Missing payment requirements');
     }
 
@@ -167,7 +160,7 @@ export default function Home() {
     const stealthPayment = generateStealthAddress(hostMeta);
     const stealthAddressHex = '0x' + Buffer.from(stealthPayment.stealthAddress).toString('hex');
 
-    const txHash = await sendEthTransaction(metamask.address, stealthAddressHex, '0.01');
+    const txHash = await sendEthTransaction(metamask.address, stealthAddressHex, ENTRY_PRICE_ETH);
 
     await waitForTransactionReceipt(txHash);
 
@@ -222,10 +215,7 @@ export default function Home() {
       setNeedsWalletConnect(true);
       return;
     }
-    if (!identity) {
-      setNeedsWalletConnect(true);
-      return;
-    }
+    // Go Live modal handles ENS verification + stealth setup
     setGoLiveModalOpen(true);
   };
 
@@ -314,21 +304,10 @@ export default function Home() {
         onUsePassword={handleUsePassword}
       />
 
-      <ENSIdentityModal
-        isOpen={ensModalOpen}
-        room={selectedRoom}
-        walletAddress={metamask.address || ''}
-        onClose={() => {
-          setEnsModalOpen(false);
-          setSelectedRoom(null);
-        }}
-        onVerified={handleENSVerified}
-      />
-
       <PaymentModal
         isOpen={paymentModalOpen}
         room={selectedRoom}
-        ensName={currentEnsForPayment}
+        ensName={verifiedEnsName || undefined}
         onClose={() => {
           setPaymentModalOpen(false);
           setSelectedRoom(null);
@@ -342,6 +321,7 @@ export default function Home() {
           room={activeRoom.room}
           roomCredential={activeRoom.credential}
           onLeave={handleLeaveRoom}
+          isHost={activeRoom.credential === 'host-stream'}
         />
       )}
 
@@ -349,8 +329,10 @@ export default function Home() {
         isOpen={goLiveModalOpen}
         ensName={verifiedEnsName}
         metaAddress={metaAddress}
+        walletAddress={metamask.address || ''}
         onClose={() => setGoLiveModalOpen(false)}
         onStartStream={handleStartStream}
+        onEnsVerified={handleHostEnsVerified}
       />
 
       {needsWalletConnect && <WalletConnect onIdentityReady={handleIdentityReady} />}

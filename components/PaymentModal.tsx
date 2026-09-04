@@ -17,7 +17,7 @@ function CloseIcon() {
 interface PaymentModalProps {
   isOpen: boolean;
   room: LiveRoom | null;
-  ensName: string;
+  ensName?: string;
   onClose: () => void;
   onSuccess: (txHash: string, sharedSecret: Uint8Array) => void;
   onPay: () => Promise<{ txHash: string; sharedSecret: Uint8Array }>;
@@ -180,14 +180,16 @@ export function PaymentModal({
                 <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Room</span>
                 <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>{room.title}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Your Identity</span>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: "var(--accent-primary)" }}>{ensName}</span>
-              </div>
+{ensName && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Your Identity</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-primary)' }}>{ensName}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
                 <span style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.56)' }}>Amount</span>
                 <span style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-primary)' }}>
-                  0.01 ETH
+                  0.001 ETH
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -196,7 +198,7 @@ export function PaymentModal({
               </div>
             </div>
 
-            {/* How stealth works */}
+            {/* How payment stays private */}
             <div style={{
               padding: '14px',
               borderRadius: '12px',
@@ -214,20 +216,17 @@ export function PaymentModal({
                 gap: '6px'
               }}>
                 <span style={{ fontSize: '14px' }}>🔒</span>
-                How stealth payments work
+                How payment stays private
               </div>
               <div style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.64)' }}>
                 <div style={{ marginBottom: '6px' }}>
-                  1. Your wallet resolves host's ENS → meta-address
+                  Your payment goes to a <strong style={{ color: 'rgba(255, 255, 255, 0.88)' }}>one-time stealth address</strong> — not the streamer's ENS address.
                 </div>
                 <div style={{ marginBottom: '6px' }}>
-                  2. Generates unique stealth address from meta-address
-                </div>
-                <div style={{ marginBottom: '6px' }}>
-                  3. Payment goes to stealth address (private, one-time)
+                  On-chain, it looks like a payment to a random address. Nobody can link your payment to the streamer's identity.
                 </div>
                 <div>
-                  4. Only host can detect & claim funds (ERC-5564)
+                  Only the host can detect & claim the payment using their stealth keys (ERC-5564).
                 </div>
               </div>
             </div>
@@ -426,7 +425,7 @@ export function PaymentModal({
                 e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
-              Pay 0.01 ETH
+              Pay 0.001 ETH
             </button>
           </div>
         </div>
