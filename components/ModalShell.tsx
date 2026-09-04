@@ -97,9 +97,9 @@ export function ModalShell({
             position: 'relative',
             width: '100%',
             maxWidth: mobileBottomSheet ? '100%' : 400,
-            borderRadius: mobileBottomSheet ? '20px 20px 0 0' : 24,
+            borderRadius: mobileBottomSheet ? '20px 20px 0 0' : '24px',
             backgroundColor: '#16161D',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
             boxShadow: '0 24px 48px rgba(0, 0, 0, 0.48)',
             paddingBottom: mobileBottomSheet ? 'env(safe-area-inset-bottom, 0px)' : 0
           }}

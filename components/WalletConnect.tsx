@@ -125,7 +125,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
 
   if (!metamask.isInstalled) {
     return (
-      <ModalShell isOpen={true} allowOverlayClose={false}>
+      <ModalShell isOpen={true} allowOverlayClose={true} onClose={() => window.location.href = '/'}>
         {/* Accent rail */}
         <div style={{ 
           position: 'absolute',
@@ -136,6 +136,38 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
           backgroundColor: '#7C5CFF',
           borderRadius: '24px 24px 0 0'
         }} />
+
+        {/* Close button */}
+        <button
+          onClick={() => window.location.href = '/'}
+          style={{
+            position: 'absolute',
+            top: '12px',
+            right: '12px',
+            width: '32px',
+            height: '32px',
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: '8px',
+            transition: 'background 150ms ease',
+            color: 'rgba(255, 255, 255, 0.48)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.80)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'none';
+            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.48)';
+          }}
+          aria-label="Close"
+        >
+          <CloseIcon />
+        </button>
 
         {/* Header */}
         <div style={{ padding: '24px 24px 0' }}>
@@ -158,7 +190,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
         </div>
 
         {/* Body */}
-        <div style={{ padding: '20px 24px 24px' }}>
+        <div style={{ padding: '24px 24px 24px' }}>
           <a 
             href="https://metamask.io/download/" 
             target="_blank" 
