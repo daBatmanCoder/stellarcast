@@ -11,6 +11,7 @@ import { Inbox, type InboxMessage } from '@/components/Inbox';
 import { ENSIdentityModal } from '@/components/ENSIdentityModal';
 import { PaymentModal } from '@/components/PaymentModal';
 import { WalletConnect } from '@/components/WalletConnect';
+import { RoomView } from '@/components/RoomView';
 import { SEED_ROOMS, type LiveRoom } from '@/lib/data/seed-rooms';
 import type { StealthIdentity } from '@/lib/types/stealth';
 import { generateStealthAddress } from '@/lib/crypto/stealth';
@@ -33,6 +34,7 @@ export default function Home() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
+  const [activeRoom, setActiveRoom] = useState<{ room: LiveRoom; credential: string } | null>(null);
   
   // Demo state
   const [currentEnsForPayment, setCurrentEnsForPayment] = useState('');
@@ -102,15 +104,31 @@ export default function Home() {
     }, 300);
   };
 
-  const handlePayment = async (): Promise<string> => {
+  const handlePayment = async (): Promise<{ txHash: string; sharedSecret: Uint8Array }> => {
     if (!identity || !selectedRoom || !metamask.address) {
       throw new Error('Missing payment requirements');
     }
 
-    // Generate stealth address for the room host
-    // In demo, we'll use a mock meta-address derived from the host address
-    const meta = identityToMetaAddress(identity);
-    const stealthPayment = generateStealthAddress(meta);
+    // Get host's meta-address (from registry or demo)
+    const { getDemoHostMetaAddress } = await import('@/lib/demo/host-meta-addresses');
+    const { getProtocolAdapter } = await import('@/lib/protocol/adapters');
+    
+    let hostMeta;
+    try {
+      const adapter = getProtocolAdapter();
+      hostMeta = await adapter.getMetaAddress(selectedRoom.host);
+    } catch (e) {
+      // Fallback to demo meta-address if registry lookup fails
+      hostMeta = null;
+    }
+    
+    if (!hostMeta) {
+      // Use deterministic demo meta-address for seed hosts
+      hostMeta = getDemoHostMetaAddress(selectedRoom.host);
+    }
+
+    // Generate stealth address for the HOST (not viewer)
+    const stealthPayment = generateStealthAddress(hostMeta);
     const stealthAddressHex = '0x' + Buffer.from(stealthPayment.stealthAddress).toString('hex');
 
     // Send real payment on Sepolia
@@ -120,25 +138,27 @@ export default function Home() {
       '0.01'
     );
 
-    // Wait for confirmation (simplified for demo)
+    // Wait for confirmation
     await waitForTransactionReceipt(txHash);
 
-    return txHash;
+    return { 
+      txHash, 
+      sharedSecret: stealthPayment.sharedSecret 
+    };
   };
 
-  const handlePaymentSuccess = (txHash: string) => {
+  const handlePaymentSuccess = async (txHash: string, sharedSecret: Uint8Array) => {
     if (!selectedRoom) return;
 
-    // Create inbox message with encrypted password
-    const encryptedPassword = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('')}`;
+    // Derive room credential from ECDH shared secret
+    const { deriveAccessCredential } = await import('@/lib/crypto/credentials');
+    const roomCredential = deriveAccessCredential(sharedSecret);
 
     const message: InboxMessage = {
       id: `msg-${Date.now()}`,
       roomId: selectedRoom.id,
       roomTitle: selectedRoom.title,
-      encryptedPassword,
+      encryptedPassword: roomCredential,
       timestamp: new Date().toISOString(),
       isRead: false
     };
@@ -158,9 +178,19 @@ export default function Home() {
       prev.map(m => m.id === message.id ? { ...m, isRead: true } : m)
     );
 
-    // In full implementation, this would join the WebRTC room
-    alert(`Joining room with password: ${message.encryptedPassword.slice(0, 20)}...`);
-    setInboxOpen(false);
+    // Find the room
+    const room = SEED_ROOMS.find(r => r.id === message.roomId);
+    if (room) {
+      setActiveRoom({
+        room,
+        credential: message.encryptedPassword
+      });
+      setInboxOpen(false);
+    }
+  };
+
+  const handleLeaveRoom = () => {
+    setActiveRoom(null);
   };
 
   // Show wallet connect if needed
@@ -263,6 +293,15 @@ export default function Home() {
           onPay={handlePayment}
           onSuccess={handlePaymentSuccess}
         />
+
+        {/* Room View (WebRTC Stream) */}
+        {activeRoom && (
+          <RoomView
+            room={activeRoom.room}
+            roomCredential={activeRoom.credential}
+            onLeave={handleLeaveRoom}
+          />
+        )}
       </div>
     </NetworkGuard>
   );
