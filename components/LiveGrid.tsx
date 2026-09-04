@@ -14,6 +14,7 @@ interface LiveGridProps {
   emptyTitle?: string;
   emptyDescription?: string;
   onClearFilters?: () => void;
+  variant?: 'browse' | 'manage';
 }
 
 export function LiveGrid({
@@ -24,6 +25,7 @@ export function LiveGrid({
   emptyTitle = 'No streams found',
   emptyDescription = 'Try a different search or clear filters.',
   onClearFilters,
+  variant = 'browse',
 }: LiveGridProps) {
   return (
     <section className="content-shelf" aria-label={title}>
@@ -45,7 +47,7 @@ export function LiveGrid({
       ) : (
         <div className="content-grid">
           {rooms.map((room) => (
-            <ContentCard key={room.id} room={room} onSelect={onSelectRoom} />
+            <ContentCard key={room.id} room={room} onSelect={onSelectRoom} variant={variant} />
           ))}
         </div>
       )}

@@ -10,25 +10,28 @@ import type { LiveRoom } from '@/lib/storage/rooms-store';
 /**
  * Deployed StellaCast Rooms contract address on Sepolia
  * 
- * DEPLOYMENT STATUS: DEPLOYED ✅
+ * DEPLOYMENT STATUS: REDEPLOY REQUIRED
+ * The live Sepolia address below is the previous registry (status flip only).
+ * endRoom / live indexes / tombstones exist only after you deploy
+ * contracts/StellaCastRooms.sol and replace this address.
  * 
- * Contract: 0x4D34702b7967272adba2A361766cC461CF72f60a
- * Deploy Tx: 0xee0266d005020adb19d4b54a88ece95a0f67439c6a0c6810bd70cfcfa342097f
- * Deployer: 0xD0a2b03fCCAD184B9eec286FeFA34301E9436206
- * Etherscan: https://sepolia.etherscan.io/address/0x4D34702b7967272adba2A361766cC461CF72f60a
+ * Previous: 0x4D34702b7967272adba2A361766cC461CF72f60a
  */
 export const ROOM_CONTRACT_ADDRESS = '0x4D34702b7967272adba2A361766cC461CF72f60a';
 const ROOM_DEPLOY_BLOCK = 11_633_265;
 
 const ROOMS_ABI = parseAbi([
   'function createRoom(string hostEns, string title, string category, string tags, string stealthMetaAddress, string thumbnail, uint256 entryPrice, bytes encryptedAccessData) returns (uint256)',
-  'function updateRoomStatus(uint256 tokenId, bool isLive)',
-  'function getRoomMetadata(uint256 tokenId) view returns ((uint256 tokenId, address host, string hostEns, string title, string category, string tags, string stealthMetaAddress, string thumbnail, uint256 entryPrice, bool isLive, uint256 createdAt))',
+  'function endRoom(uint256 tokenId)',
+  'function getRoomMetadata(uint256 tokenId) view returns ((uint256 tokenId, address host, string hostEns, string title, string category, string tags, string stealthMetaAddress, string thumbnail, uint256 entryPrice, bool isLive, bool burned, uint256 createdAt, uint256 endedAt))',
   'function getEncryptedAccessData(uint256 tokenId) view returns (bytes)',
+  'function getLiveRoomIds() view returns (uint256[])',
   'function getAllRoomIds() view returns (uint256[])',
   'function getRoomsByHost(address host) view returns (uint256[])',
   'function getTotalRooms() view returns (uint256)',
+  'function getLiveRoomCount() view returns (uint256)',
   'function roomExists(uint256 tokenId) view returns (bool)',
+  'function isJoinable(uint256 tokenId) view returns (bool)',
 ]);
 
 const ROOM_CREATED_EVENT = parseAbiItem(
@@ -111,26 +114,27 @@ function parseRoomCreatedTokenId(
 }
 
 /**
- * Update room live status
+ * Burn the live room NFT. Same host transaction as closing the stream.
  */
-export async function updateRoomStatusOnChain(
+export async function endRoomOnChain(
   fromAddress: string,
-  tokenId: number,
-  isLive: boolean
+  tokenId: number
 ): Promise<string> {
   const data = encodeFunctionData({
     abi: ROOMS_ABI,
-    functionName: 'updateRoomStatus',
-    args: [BigInt(tokenId), isLive],
+    functionName: 'endRoom',
+    args: [BigInt(tokenId)],
   });
 
-  return await sendContractTransaction(fromAddress, ROOM_CONTRACT_ADDRESS, data);
+  const txHash = await sendContractTransaction(fromAddress, ROOM_CONTRACT_ADDRESS, data);
+  await waitForTransactionReceipt(txHash);
+  return txHash;
 }
 
 /**
  * Get room metadata from chain
  */
-export async function getRoomMetadata(tokenId: number): Promise<{
+type RoomMetadataOnChain = {
   tokenId: number;
   host: string;
   hostEns: string;
@@ -139,10 +143,14 @@ export async function getRoomMetadata(tokenId: number): Promise<{
   tags: string[];
   stealthMetaAddress: string;
   thumbnail: string;
-  entryPrice: string; // ETH amount
+  entryPrice: string;
   isLive: boolean;
+  burned: boolean;
   createdAt: number;
-} | null> {
+  endedAt: number;
+};
+
+export async function getRoomMetadata(tokenId: number): Promise<RoomMetadataOnChain | null> {
   try {
     const data = encodeFunctionData({
       abi: ROOMS_ABI,
@@ -168,8 +176,12 @@ export async function getRoomMetadata(tokenId: number): Promise<{
       thumbnail: string;
       entryPrice: bigint;
       isLive: boolean;
+      burned: boolean;
       createdAt: bigint;
+      endedAt: bigint;
     };
+
+    if (Number(decoded.createdAt) === 0) return null;
 
     return {
       tokenId: Number(decoded.tokenId),
@@ -181,13 +193,37 @@ export async function getRoomMetadata(tokenId: number): Promise<{
       stealthMetaAddress: decoded.stealthMetaAddress,
       thumbnail: decoded.thumbnail,
       entryPrice: (Number(decoded.entryPrice) / 1e18).toString(),
-      isLive: decoded.isLive,
+      isLive: decoded.isLive && !decoded.burned,
+      burned: decoded.burned,
       createdAt: Number(decoded.createdAt),
+      endedAt: Number(decoded.endedAt),
     };
   } catch (error) {
     console.error('Failed to get room metadata:', error);
     return null;
   }
+}
+
+function metadataToLiveRoom(
+  metadata: RoomMetadataOnChain,
+  createdBlocks: Map<number, number>
+): LiveRoom {
+  return {
+    id: `room-${metadata.tokenId}`,
+    title: metadata.title,
+    host: metadata.host,
+    hostDisplayName: metadata.hostEns,
+    category: metadata.category,
+    tags: metadata.tags,
+    viewers: 0,
+    thumbnail: metadata.thumbnail || `/thumbnails/room-${metadata.tokenId % 8 + 1}.svg`,
+    isLive: metadata.isLive,
+    burned: metadata.burned,
+    createdAt: metadata.createdAt * 1000,
+    endedAt: metadata.endedAt > 0 ? metadata.endedAt * 1000 : undefined,
+    createdBlock: createdBlocks.get(metadata.tokenId),
+    stealthMetaAddress: metadata.stealthMetaAddress || undefined,
+  };
 }
 
 /**
@@ -251,11 +287,11 @@ export function parseRoomTokenId(roomId: string): number | undefined {
   return Number.isFinite(tokenId) ? tokenId : undefined;
 }
 
-export async function getAllRoomIds(): Promise<number[]> {
+async function getRoomIds(functionName: 'getLiveRoomIds' | 'getAllRoomIds'): Promise<number[]> {
   try {
     const data = encodeFunctionData({
       abi: ROOMS_ABI,
-      functionName: 'getAllRoomIds',
+      functionName,
       args: [],
     });
 
@@ -264,15 +300,23 @@ export async function getAllRoomIds(): Promise<number[]> {
 
     const decoded = decodeFunctionResult({
       abi: ROOMS_ABI,
-      functionName: 'getAllRoomIds',
+      functionName,
       data: result as Hex,
     }) as bigint[];
 
     return decoded.map(id => Number(id));
   } catch (error) {
-    console.error('Failed to get all room IDs:', error);
+    console.error(`Failed to get room IDs via ${functionName}:`, error);
     return [];
   }
+}
+
+export async function getAllRoomIds(): Promise<number[]> {
+  return getRoomIds('getAllRoomIds');
+}
+
+export async function getLiveRoomIds(): Promise<number[]> {
+  return getRoomIds('getLiveRoomIds');
 }
 
 /**
@@ -281,7 +325,7 @@ export async function getAllRoomIds(): Promise<number[]> {
  */
 export async function getAllRooms(): Promise<LiveRoom[]> {
   try {
-    const roomIds = await getAllRoomIds();
+    const roomIds = await getLiveRoomIds();
     if (roomIds.length === 0) return [];
 
     const createdBlocks = await getRoomCreatedBlocks();
@@ -289,29 +333,11 @@ export async function getAllRooms(): Promise<LiveRoom[]> {
 
     for (const tokenId of roomIds) {
       const metadata = await getRoomMetadata(tokenId);
-      if (!metadata) continue;
-
-      rooms.push({
-        id: `room-${tokenId}`,
-        title: metadata.title,
-        host: metadata.host,
-        hostDisplayName: metadata.hostEns,
-        category: metadata.category,
-        tags: metadata.tags,
-        viewers: 0, // Real viewer count would come from separate tracking
-        thumbnail: metadata.thumbnail || `/thumbnails/room-${tokenId % 8 + 1}.svg`,
-        isLive: metadata.isLive,
-        isFeatured: false,
-        createdAt: metadata.createdAt * 1000, // convert to ms
-        createdBlock: createdBlocks.get(tokenId),
-        stealthMetaAddress: metadata.stealthMetaAddress,
-      });
+      if (!metadata || !metadata.isLive || metadata.burned) continue;
+      rooms.push(metadataToLiveRoom(metadata, createdBlocks));
     }
 
-    // Return live rooms first, newest first
-    return rooms
-      .filter(r => r.isLive)
-      .sort((a, b) => b.createdAt - a.createdAt);
+    return rooms.sort((a, b) => b.createdAt - a.createdAt);
   } catch (error) {
     console.error('Failed to get all rooms:', error);
     return [];
@@ -346,21 +372,7 @@ export async function getRoomsByHost(hostAddress: string): Promise<LiveRoom[]> {
       const metadata = await getRoomMetadata(tokenId);
       if (!metadata) continue;
 
-      rooms.push({
-        id: `room-${tokenId}`,
-        title: metadata.title,
-        host: metadata.host,
-        hostDisplayName: metadata.hostEns,
-        category: metadata.category,
-        tags: metadata.tags,
-        viewers: 0,
-        thumbnail: metadata.thumbnail || `/thumbnails/room-${tokenId % 8 + 1}.svg`,
-        isLive: metadata.isLive,
-        isFeatured: false,
-        createdAt: metadata.createdAt * 1000,
-        createdBlock: createdBlocks.get(tokenId),
-        stealthMetaAddress: metadata.stealthMetaAddress,
-      });
+      rooms.push(metadataToLiveRoom(metadata, createdBlocks));
     }
 
     return rooms.sort((a, b) => b.createdAt - a.createdAt);

@@ -15,7 +15,12 @@ import { GoLiveModal } from '@/components/GoLiveModal';
 import { ViewStealthAddressModal } from '@/components/ViewStealthAddressModal';
 import { getCategoryStats, type LiveRoom } from '@/lib/data/seed-rooms';
 import type { StealthIdentity } from '@/lib/types/stealth';
-import { generateStealthAddress, encodeNativeEthMetadata, entryPriceToWei } from '@/lib/crypto/stealth';
+import {
+  generateStealthAddress,
+  encodeNativeEthMetadata,
+  entryPriceToWei,
+  type StealthPaymentKind,
+} from '@/lib/crypto/stealth';
 import { sendEthTransaction, waitForTransactionReceipt } from '@/lib/blockchain/transactions';
 import { getENSVerification, storeENSVerification } from '@/lib/storage/ens-store';
 import type { CategoryItem } from '@/components/ui/CategoryCard';
@@ -24,10 +29,24 @@ import {
   resolveHostStealthMetaAddress,
   type ReceivingStatus,
 } from '@/lib/stealth/receiving';
-import { replaceStoredIdentity, clearSessionWrapKey } from '@/lib/storage/identity-store';
+import {
+  replaceStoredIdentity,
+  clearSessionWrapKey,
+  loadIdentity,
+  getAuthInfo,
+  getSessionWrapKey,
+  setSessionWrapKey,
+} from '@/lib/storage/identity-store';
+import { reauthenticateWithWallet } from '@/lib/wallet/wallet-auth';
 import { deriveAccessCredential } from '@/lib/crypto/credentials';
 import { encodeMetaAddress, identityToMetaAddress } from '@/lib/crypto/identity';
 import { useRooms } from '@/lib/hooks/useRooms';
+import {
+  saveAccessTicket,
+  getAccessTicket,
+  listAccessTickets,
+  type AccessTicket,
+} from '@/lib/storage/rooms-store';
 
 const SIDEBAR_KEY = 'stellarcast-sidebar-collapsed';
 const ENTRY_PRICE_ETH = '0.001';
@@ -55,7 +74,17 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [hostRooms, setHostRooms] = useState<LiveRoom[]>([]);
   const identityRef = useRef<StealthIdentity | null>(null);
+
+  const ticketToInbox = (ticket: AccessTicket): InboxMessage => ({
+    id: ticket.id,
+    roomId: ticket.roomId,
+    roomTitle: ticket.roomTitle,
+    encryptedPassword: ticket.credential,
+    timestamp: ticket.paidAt,
+    isRead: true,
+  });
 
   const featuredRoom = rooms.find((r) => r.isFeatured) || rooms[0] || null;
 
@@ -71,8 +100,8 @@ export default function Home() {
     setSelectedRoom(null);
     setActiveRoom(null);
     setInboxOpen(false);
-    // Keep inboxMessages — they are local credentials; clearing is safer on account switch
     setInboxMessages([]);
+    setHostRooms([]);
     identityRef.current = null;
     clearSessionWrapKey();
   };
@@ -138,6 +167,51 @@ export default function Home() {
     checkExistingENS();
   }, [metamask.isConnected, metamask.address]);
 
+  useEffect(() => {
+    const wallet = metamask.address;
+    if (!wallet) {
+      setInboxMessages([]);
+      setHostRooms([]);
+      return;
+    }
+
+    let cancelled = false;
+    const loadWalletData = async () => {
+      try {
+        const tickets = await listAccessTickets(wallet);
+        if (!cancelled) setInboxMessages(tickets.map(ticketToInbox));
+      } catch (err) {
+        console.warn('Could not load access tickets:', err);
+      }
+
+      try {
+        const { getRoomsByHost } = await import('@/lib/blockchain/rooms-contract');
+        const owned = await getRoomsByHost(wallet);
+        if (!cancelled) setHostRooms(owned);
+      } catch (err) {
+        console.warn('Could not load host rooms:', err);
+      }
+    };
+
+    void loadWalletData();
+    return () => {
+      cancelled = true;
+    };
+  }, [metamask.address]);
+
+  useEffect(() => {
+    if (!paymentModalOpen || !selectedRoom || !metamask.address) return;
+    let cancelled = false;
+    void getAccessTicket(metamask.address, selectedRoom.id).then((ticket) => {
+      if (!cancelled && ticket) {
+        enterRoom(selectedRoom, ticket.credential);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentModalOpen, selectedRoom, metamask.address]);
+
   const refreshReceivingStatus = async (
     wallet: string,
     userIdentity: StealthIdentity,
@@ -189,7 +263,7 @@ export default function Home() {
   const handleWalletConnected = () => {
     setNeedsWalletConnect(false);
     if (selectedRoom) {
-      setPaymentModalOpen(true);
+      void handleRoomSelect(selectedRoom);
     }
   };
 
@@ -234,26 +308,53 @@ export default function Home() {
     setViewStealthOpen(true);
   };
 
-  const handleRoomSelect = (room: LiveRoom) => {
-    setSelectedRoom(room);
-    setPaymentModalOpen(true);
+  const enterRoom = (room: LiveRoom, credential: string) => {
+    setActiveRoom({ room, credential });
+    setPaymentModalOpen(false);
+    setSelectedRoom(null);
+    setInboxOpen(false);
   };
 
-  const handlePayment = async (): Promise<{ txHash: string; sharedSecret: Uint8Array }> => {
-    if (!selectedRoom || !metamask.address) {
-      throw new Error('Missing payment requirements');
+  const unlockHostIdentity = async (wallet: string) => {
+    if (identityRef.current) return identityRef.current;
+    try {
+      const auth = await getAuthInfo();
+      if (!auth || auth.walletAddress.toLowerCase() !== wallet.toLowerCase()) {
+        return null;
+      }
+      const wrap =
+        getSessionWrapKey() ??
+        (await reauthenticateWithWallet(wallet, auth.authNonce, auth.authTimestamp));
+      setSessionWrapKey(wrap);
+      const loaded = await loadIdentity(wallet, wrap);
+      if (loaded) {
+        identityRef.current = loaded;
+        setIdentity(loaded);
+        setMetaAddress(encodeMetaAddress(identityToMetaAddress(loaded)));
+      }
+      return loaded;
+    } catch (err) {
+      console.warn('Could not unlock host payment keys:', err);
+      return null;
     }
+  };
 
+  const sendStealthPayment = async (
+    room: LiveRoom,
+    fromAddress: string,
+    amountEth: string,
+    kind: StealthPaymentKind
+  ): Promise<{ txHash: string; sharedSecret: Uint8Array }> => {
     const { getProtocolAdapter } = await import('@/lib/protocol/adapters');
     const adapter = getProtocolAdapter();
 
-    const hostEnsName = selectedRoom.hostDisplayName?.endsWith('.eth')
-      ? selectedRoom.hostDisplayName
+    const hostEnsName = room.hostDisplayName?.endsWith('.eth')
+      ? room.hostDisplayName
       : null;
 
     const hostMeta = await resolveHostStealthMetaAddress({
       ensName: hostEnsName,
-      encodedMeta: selectedRoom.stealthMetaAddress,
+      encodedMeta: room.stealthMetaAddress,
     });
 
     if (!hostMeta) {
@@ -267,7 +368,9 @@ export default function Home() {
     const ephemeralPubKeyHex = '0x' + Buffer.from(stealthPayment.ephemeralPublicKey).toString('hex');
     const metadata = encodeNativeEthMetadata(
       stealthPayment.viewTag,
-      entryPriceToWei(ENTRY_PRICE_ETH)
+      entryPriceToWei(amountEth),
+      kind,
+      stealthPayment.sharedSecret
     );
 
     if (adapter.mode === 'live') {
@@ -281,7 +384,7 @@ export default function Home() {
       await waitForTransactionReceipt(announceTxHash);
     }
 
-    const txHash = await sendEthTransaction(metamask.address, stealthAddressHex, ENTRY_PRICE_ETH);
+    const txHash = await sendEthTransaction(fromAddress, stealthAddressHex, amountEth);
     await waitForTransactionReceipt(txHash);
 
     return {
@@ -290,52 +393,106 @@ export default function Home() {
     };
   };
 
-  const handlePaymentSuccess = async (_txHash: string, sharedSecret: Uint8Array) => {
-    if (!selectedRoom) return;
+  const handleRoomSelect = async (room: LiveRoom) => {
+    if (metamask.address && room.host.toLowerCase() === metamask.address.toLowerCase()) {
+      enterRoom(room, 'host-stream');
+      void unlockHostIdentity(metamask.address);
+      return;
+    }
+
+    if (metamask.address) {
+      const stored = await getAccessTicket(metamask.address, room.id);
+      const memory = inboxMessages.find((message) => message.roomId === room.id);
+      const credential = stored?.credential || memory?.encryptedPassword;
+      if (credential) {
+        enterRoom(room, credential);
+        return;
+      }
+    }
+
+    setSelectedRoom(room);
+    setPaymentModalOpen(true);
+  };
+
+  const handlePayment = async (): Promise<{ txHash: string; sharedSecret: Uint8Array }> => {
+    if (!selectedRoom || !metamask.address) {
+      throw new Error('Missing payment requirements');
+    }
+
+    return sendStealthPayment(selectedRoom, metamask.address, ENTRY_PRICE_ETH, 'access');
+  };
+
+  const handlePaymentSuccess = async (txHash: string, sharedSecret: Uint8Array) => {
+    if (!selectedRoom || !metamask.address) return;
 
     const roomCredential = deriveAccessCredential(sharedSecret);
+    const paidAt = new Date().toISOString();
+
+    try {
+      await saveAccessTicket({
+        walletAddress: metamask.address,
+        roomId: selectedRoom.id,
+        roomTitle: selectedRoom.title,
+        credential: roomCredential,
+        paidAt,
+        txHash,
+        room: selectedRoom,
+      });
+    } catch (err) {
+      console.warn('Could not persist access ticket:', err);
+    }
 
     const message: InboxMessage = {
-      id: `msg-${Date.now()}`,
+      id: `${metamask.address.toLowerCase()}:${selectedRoom.id}`,
       roomId: selectedRoom.id,
       roomTitle: selectedRoom.title,
       encryptedPassword: roomCredential,
-      timestamp: new Date().toISOString(),
-      isRead: false,
+      timestamp: paidAt,
+      isRead: true,
     };
 
-    setInboxMessages((prev) => [message, ...prev]);
-    setPaymentModalOpen(false);
-
-    setTimeout(() => {
-      setInboxOpen(true);
-    }, 500);
+    setInboxMessages((prev) => [message, ...prev.filter((item) => item.roomId !== selectedRoom.id)]);
+    enterRoom(selectedRoom, roomCredential);
   };
 
-  const handleUsePassword = (message: InboxMessage) => {
+  const handleTip = async (amountEth: string) => {
+    if (!activeRoom || !metamask.address || activeRoom.credential === 'host-stream') {
+      throw new Error('Connect the wallet that paid, then tip from inside the room');
+    }
+    await sendStealthPayment(activeRoom.room, metamask.address, amountEth, 'tip');
+  };
+
+  const handleUsePassword = async (message: InboxMessage) => {
     setInboxMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, isRead: true } : m)));
 
-    const room = rooms.find((r) => r.id === message.roomId);
-    if (room) {
-      setActiveRoom({
-        room,
-        credential: message.encryptedPassword,
-      });
-      setInboxOpen(false);
+    const live = rooms.find((r) => r.id === message.roomId);
+    if (live) {
+      enterRoom(live, message.encryptedPassword);
+      return;
     }
+
+    if (metamask.address) {
+      const stored = await getAccessTicket(metamask.address, message.roomId);
+      if (stored?.room) {
+        enterRoom(stored.room, message.encryptedPassword);
+        return;
+      }
+    }
+
+    window.alert('That room is no longer in Browse. The ticket is still saved if the host goes live again.');
   };
 
   const handleLeaveRoom = async () => {
     const session = activeRoom;
     if (!session) return;
 
-    if (session.credential === 'host-stream' && metamask.address) {
+    if (session.credential === 'host-stream' && metamask.address && session.room.isLive) {
       const confirmed = window.confirm(
-        'End this livestream? The listing will leave Browse. If you cancel the wallet transaction, the room stays live.'
+        'End this livestream? This burns the room NFT in one transaction. It leaves Browse and cannot be reopened.'
       );
       if (!confirmed) return;
 
-      const { parseRoomTokenId, updateRoomStatusOnChain } = await import('@/lib/blockchain/rooms-contract');
+      const { parseRoomTokenId, endRoomOnChain } = await import('@/lib/blockchain/rooms-contract');
       const tokenId = parseRoomTokenId(session.room.id);
       if (tokenId === undefined) {
         setActiveRoom(null);
@@ -344,8 +501,19 @@ export default function Home() {
       }
 
       try {
-        await updateRoomStatusOnChain(metamask.address, tokenId, false);
-        upsertRoom({ ...session.room, isLive: false });
+        await endRoomOnChain(metamask.address, tokenId);
+        const ended = {
+          ...session.room,
+          isLive: false,
+          burned: true,
+          endedAt: Date.now(),
+          stealthMetaAddress: undefined,
+        };
+        upsertRoom(ended);
+        setHostRooms((prev) => {
+          const rest = prev.filter((room) => room.id !== ended.id);
+          return [ended, ...rest];
+        });
         setActiveRoom(null);
         void reloadRooms();
       } catch (err) {
@@ -353,7 +521,7 @@ export default function Home() {
         if (message.toLowerCase().includes('reject') || message.toLowerCase().includes('denied')) {
           return;
         }
-        window.alert(message || 'Could not end the livestream on-chain. The listing may still be live.');
+        window.alert(message || 'Could not burn the room NFT. The listing may still be live.');
       }
       return;
     }
@@ -408,11 +576,12 @@ export default function Home() {
       hostDisplayName: ensName,
       title,
       category,
-      viewers: 1,
+      viewers: 0,
       tags,
       isFeatured: false,
       thumbnail: '',
       isLive: true,
+      burned: false,
       createdAt: Date.now(),
       createdBlock: blockNumber,
       stealthMetaAddress: encodedMeta,
@@ -421,6 +590,7 @@ export default function Home() {
     setVerifiedEnsName(ensName);
     setGoLiveModalOpen(false);
     upsertRoom(hostRoom);
+    setHostRooms((prev) => [hostRoom, ...prev.filter((room) => room.id !== hostRoom.id)]);
     setActiveRoom({ room: hostRoom, credential: 'host-stream' });
     void reloadRooms();
   };
@@ -468,6 +638,17 @@ export default function Home() {
         inboxOpen={inboxOpen}
       >
         {showFeatured && featuredRoom && <FeaturedCarousel room={featuredRoom} onJoin={handleRoomSelect} />}
+
+        {metamask.address && hostRooms.length > 0 && showFeatured && (
+          <LiveGrid
+            rooms={hostRooms}
+            onSelectRoom={handleRoomSelect}
+            title="Your streams"
+            variant="manage"
+            emptyTitle="No rooms yet"
+            emptyDescription="Go Live to mint a room you can manage."
+          />
+        )}
 
         <LiveGrid
           rooms={filteredRooms}
@@ -518,12 +699,8 @@ export default function Home() {
           roomCredential={activeRoom.credential}
           onLeave={handleLeaveRoom}
           isHost={activeRoom.credential === 'host-stream'}
-          hostIdentity={identity}
-          onPaymentDetected={(payment) => {
-            console.log('Host detected payment:', payment);
-            // Payment automatically has the shared secret which = access credential
-            // Viewer already has this from their payment flow
-          }}
+          hostIdentity={activeRoom.credential === 'host-stream' ? identity : null}
+          onTip={activeRoom.credential === 'host-stream' ? undefined : handleTip}
         />
       )}
 

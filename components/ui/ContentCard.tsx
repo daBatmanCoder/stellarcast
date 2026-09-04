@@ -8,9 +8,10 @@ import { LiveBadge, MetadataBadge, Tag } from './Badges';
 interface ContentCardProps {
   room: LiveRoom;
   onSelect: (room: LiveRoom) => void;
+  variant?: 'browse' | 'manage';
 }
 
-export function ContentCard({ room, onSelect }: ContentCardProps) {
+export function ContentCard({ room, onSelect, variant = 'browse' }: ContentCardProps) {
   const hostLabel = room.hostDisplayName || truncateAddress(room.host);
   const thumb = room.thumbnail ? assetPath(room.thumbnail) : '';
 
@@ -52,7 +53,15 @@ export function ContentCard({ room, onSelect }: ContentCardProps) {
           )}
 
           <div style={{ position: 'absolute', bottom: 8, left: 8 }}>
-            <MetadataBadge>{formatViewerCount(room.viewers)} viewers</MetadataBadge>
+            <MetadataBadge>
+              {variant === 'manage'
+                ? room.isLive
+                  ? 'Manage'
+                  : 'Dashboard'
+                : room.isLive
+                  ? `${formatViewerCount(room.viewers)} viewers`
+                  : 'Ended'}
+            </MetadataBadge>
           </div>
         </div>
       </div>

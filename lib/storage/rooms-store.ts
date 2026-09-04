@@ -24,10 +24,23 @@ export interface LiveRoom {
   viewers: number;
   thumbnail: string;
   isLive: boolean;
+  burned?: boolean;
   isFeatured?: boolean;
   createdAt: number;
+  endedAt?: number;
   createdBlock?: number;
   stealthMetaAddress?: string; // Host's stealth meta-address for payments
+}
+
+export interface AccessTicket {
+  id: string;
+  walletAddress: string;
+  roomId: string;
+  roomTitle: string;
+  credential: string;
+  paidAt: string;
+  txHash?: string;
+  room?: LiveRoom;
 }
 
 interface RoomsDB extends DBSchema {
@@ -40,6 +53,13 @@ interface RoomsDB extends DBSchema {
       'by-live': number; // 1 for live, 0 for offline
     };
   };
+  tickets: {
+    key: string;
+    value: AccessTicket;
+    indexes: {
+      'by-wallet': string;
+    };
+  };
 }
 
 let db: IDBPDatabase<RoomsDB> | null = null;
@@ -47,7 +67,7 @@ let db: IDBPDatabase<RoomsDB> | null = null;
 async function initDB(): Promise<void> {
   if (db) return;
 
-  db = await openDB<RoomsDB>('stellarcast-rooms', 1, {
+  db = await openDB<RoomsDB>('stellarcast-rooms', 2, {
     upgrade(database) {
       if (!database.objectStoreNames.contains('rooms')) {
         const store = database.createObjectStore('rooms', { keyPath: 'id' });
@@ -55,8 +75,45 @@ async function initDB(): Promise<void> {
         store.createIndex('by-created', 'createdAt', { unique: false });
         store.createIndex('by-live', 'isLive', { unique: false });
       }
+      if (!database.objectStoreNames.contains('tickets')) {
+        const tickets = database.createObjectStore('tickets', { keyPath: 'id' });
+        tickets.createIndex('by-wallet', 'walletAddress', { unique: false });
+      }
     },
   });
+}
+
+function ticketKey(walletAddress: string, roomId: string): string {
+  return `${walletAddress.toLowerCase()}:${roomId}`;
+}
+
+export async function saveAccessTicket(ticket: Omit<AccessTicket, 'id'>): Promise<AccessTicket> {
+  await initDB();
+  if (!db) throw new Error('DB not initialized');
+
+  const record: AccessTicket = {
+    ...ticket,
+    id: ticketKey(ticket.walletAddress, ticket.roomId),
+    walletAddress: ticket.walletAddress.toLowerCase(),
+  };
+  await db.put('tickets', record);
+  return record;
+}
+
+export async function getAccessTicket(
+  walletAddress: string,
+  roomId: string
+): Promise<AccessTicket | null> {
+  await initDB();
+  if (!db) throw new Error('DB not initialized');
+  return (await db.get('tickets', ticketKey(walletAddress, roomId))) || null;
+}
+
+export async function listAccessTickets(walletAddress: string): Promise<AccessTicket[]> {
+  await initDB();
+  if (!db) throw new Error('DB not initialized');
+  const tickets = await db.getAllFromIndex('tickets', 'by-wallet', walletAddress.toLowerCase());
+  return tickets.sort((a, b) => (a.paidAt < b.paidAt ? 1 : -1));
 }
 
 /**

@@ -11,6 +11,10 @@ import { IconButton } from './ui/IconButton';
 import { IconChevronLeft, IconClose, IconPanel, IconWarning } from './ui/Icons';
 import { useAnnouncementScanner } from '@/hooks/useAnnouncementScanner';
 import type { MatchedPayment } from '@/lib/stealth/announcement-watcher';
+import { parseNativeEthAmount, parseStealthPaymentKind } from '@/lib/crypto/stealth';
+import { formatEther } from 'viem';
+
+const TIP_AMOUNTS = ['0.001', '0.005', '0.01'] as const;
 
 interface RoomViewProps {
   room: LiveRoom;
@@ -19,6 +23,7 @@ interface RoomViewProps {
   isHost?: boolean;
   hostIdentity?: StealthIdentity | null;
   onPaymentDetected?: (payment: MatchedPayment) => void;
+  onTip?: (amountEth: string) => Promise<void>;
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'failed';
@@ -30,6 +35,7 @@ export function RoomView({
   isHost = false,
   hostIdentity = null,
   onPaymentDetected,
+  onTip,
 }: RoomViewProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -37,6 +43,10 @@ export function RoomView({
   const [error, setError] = useState<string>('');
   const [panelOpen, setPanelOpen] = useState(true);
   const [detectedPayments, setDetectedPayments] = useState<MatchedPayment[]>([]);
+  const [tipAmount, setTipAmount] = useState<(typeof TIP_AMOUNTS)[number]>('0.001');
+  const [tipping, setTipping] = useState(false);
+  const [tipError, setTipError] = useState('');
+  const [tipDone, setTipDone] = useState('');
 
   const scanner = useAnnouncementScanner({
     identity: isHost ? hostIdentity : null,
@@ -45,7 +55,6 @@ export function RoomView({
     fromBlock: room.createdBlock,
     excludeCaller: room.host,
     onPaymentDetected: (payment) => {
-      console.log('Payment detected!', payment);
       setDetectedPayments((prev) => {
         if (prev.some((p) => p.announcement.txHash === payment.announcement.txHash)) {
           return prev;
@@ -82,6 +91,11 @@ export function RoomView({
   }, [remoteStream]);
 
   const initializeConnection = async () => {
+    if (isHost && !room.isLive) {
+      setConnectionState('disconnected');
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
@@ -139,6 +153,33 @@ export function RoomView({
   };
 
   const hostLabel = room.hostDisplayName || truncateAddress(room.host);
+  const paymentKind = (payment: MatchedPayment) =>
+    parseStealthPaymentKind(payment.announcement.metadata, payment.sharedSecret);
+  const accessPayments = isHost
+    ? detectedPayments.filter((payment) => paymentKind(payment) === 'access')
+    : [];
+  const tipPayments = isHost
+    ? detectedPayments.filter((payment) => paymentKind(payment) === 'tip')
+    : [];
+  const tipTotalWei = tipPayments.reduce((sum, payment) => {
+    return sum + (parseNativeEthAmount(payment.announcement.metadata) ?? BigInt(0));
+  }, BigInt(0));
+  const paidJoins = accessPayments.length;
+
+  const handleTip = async () => {
+    if (!onTip || tipping) return;
+    setTipping(true);
+    setTipError('');
+    setTipDone('');
+    try {
+      await onTip(tipAmount);
+      setTipDone(`Sent ${tipAmount} ETH to the creator`);
+    } catch (err) {
+      setTipError(err instanceof Error ? err.message : 'Tip failed');
+    } finally {
+      setTipping(false);
+    }
+  };
 
   return (
     <div
@@ -167,7 +208,7 @@ export function RoomView({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <Button variant="ghost" size="sm" onClick={handleLeave}>
             <IconChevronLeft size={16} />
-            Leave
+            {isHost && room.isLive ? 'End stream' : 'Leave'}
           </Button>
           {connectionState === 'connected' ? <LiveBadge /> : (
             <span className="tag-pill" style={{ textTransform: 'uppercase' }}>{connectionState}</span>
@@ -179,7 +220,7 @@ export function RoomView({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-            {formatViewerCount(room.viewers)} viewers
+            {formatViewerCount(isHost ? paidJoins : room.viewers)} {isHost ? 'paid joins' : 'viewers'}
           </span>
           <IconButton
             label={panelOpen ? 'Hide session panel' : 'Show session panel'}
@@ -225,7 +266,11 @@ export function RoomView({
                     gap: 8,
                   }}>
                     <span style={{ fontSize: 18 }}>💰</span>
-                    {detectedPayments.length} Payment{detectedPayments.length !== 1 ? 's' : ''} Received
+                    {accessPayments.length > 0 && tipPayments.length > 0
+                      ? `${paidJoins} joined · ${tipPayments.length} tip${tipPayments.length === 1 ? '' : 's'}`
+                      : tipPayments.length > 0
+                        ? `${tipPayments.length} Tip${tipPayments.length !== 1 ? 's' : ''} received`
+                        : `${paidJoins} Paid join${paidJoins !== 1 ? 's' : ''}`}
                   </div>
                   <button
                     onClick={() => setDetectedPayments([])}
@@ -247,7 +292,11 @@ export function RoomView({
                   color: 'rgba(0, 0, 0, 0.7)',
                   lineHeight: 1.5,
                 }}>
-                  Viewers have paid to your stealth address. Room access credentials delivered to their inbox.
+                  {tipPayments.length > 0 && accessPayments.length === 0
+                    ? `Tips total ${formatEther(tipTotalWei)} ETH to your stealth addresses.`
+                    : tipPayments.length > 0
+                      ? `${paidJoins} access payment${paidJoins === 1 ? '' : 's'} and ${formatEther(tipTotalWei)} ETH in tips.`
+                      : 'Viewers paid the entry price. Access keys are in their inbox.'}
                 </div>
                 {scanner.isScanning && (
                   <div style={{
@@ -273,6 +322,17 @@ export function RoomView({
               <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-contain" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             ) : localStream ? (
               <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-contain" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            ) : isHost && !room.isLive ? (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ textAlign: 'center', padding: 24 }}>
+                  <p style={{ color: 'var(--text-primary)', fontSize: 16, fontWeight: 600, margin: 0 }}>
+                    Stream ended
+                  </p>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '8px 0 0' }}>
+                    Paid joins and tips are in the host dashboard.
+                  </p>
+                </div>
+              </div>
             ) : (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div style={{ textAlign: 'center' }}>
@@ -348,7 +408,20 @@ export function RoomView({
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <Button variant="secondary" size="sm" onClick={handleLeave}>Leave</Button>
+                {!isHost && onTip && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => {
+                      setPanelOpen(true);
+                    }}
+                  >
+                    Tip creator
+                  </Button>
+                )}
+                <Button variant="secondary" size="sm" onClick={handleLeave}>
+                  {isHost && room.isLive ? 'End stream' : 'Leave'}
+                </Button>
               </div>
             </div>
 
@@ -360,10 +433,10 @@ export function RoomView({
 
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 12, lineHeight: 1.45 }}>
               {isHost
-                ? detectedPayments.length > 0
-                  ? `${detectedPayments.length} viewer payment${detectedPayments.length === 1 ? '' : 's'} matched this room.`
-                  : 'Waiting for viewer stealth payments. Room status is in the side panel.'
-                : 'Private livestream access unlocked via stealth payment. Session status and access metadata are available in the side panel.'}
+                ? paidJoins > 0 || tipPayments.length > 0
+                  ? `${paidJoins} paid join${paidJoins === 1 ? '' : 's'}. ${tipPayments.length} tip${tipPayments.length === 1 ? '' : 's'} (${formatEther(tipTotalWei)} ETH).`
+                  : 'Admin view. Paid joins and tips land here as stealth payments arrive.'
+                : 'You already paid. Leave and rejoin without paying again. Tips are a private stealth payment — only the creator can see them.'}
             </p>
           </div>
         </div>
@@ -382,7 +455,9 @@ export function RoomView({
                   flexShrink: 0,
                 }}
               >
-                <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Session</h2>
+                <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>
+                  {isHost ? 'Host dashboard' : 'Session'}
+                </h2>
                 <IconButton label="Close panel" onClick={() => setPanelOpen(false)}>
                   <IconClose size={16} />
                 </IconButton>
@@ -390,30 +465,109 @@ export function RoomView({
 
               <div className="scroll-y" style={{ flex: 1, padding: 12 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
-                  <Row label="Status" value={connectionState} />
-                  <Row label="Viewers" value={formatViewerCount(room.viewers)} />
+                  <Row label="Status" value={room.burned ? 'burned' : room.isLive ? connectionState : 'ended'} />
                   <Row label="Category" value={room.category} />
                   <Row label="Host" value={hostLabel} />
-                  <div>
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 4px' }}>Access key</p>
-                    <p
-                      className="mono"
-                      style={{
-                        fontSize: 11,
-                        color: 'var(--text-secondary)',
-                        background: 'var(--bg-elevated)',
-                        borderRadius: 'var(--radius-sm)',
-                        padding: 8,
-                        wordBreak: 'break-all',
-                        margin: 0,
-                      }}
-                    >
-                      {roomCredential}
-                    </p>
-                  </div>
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
-                    Full peer signaling requires a deployed signaling server. This demo shows local capture and peer connection setup.
-                  </p>
+                  {isHost ? (
+                    <>
+                      <Row label="Paid joins" value={String(paidJoins)} />
+                      <Row label="Tips" value={`${tipPayments.length}`} />
+                      <Row label="Tip total" value={`${formatEther(tipTotalWei)} ETH`} />
+                      <Row label="Room id" value={room.id} />
+                      <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+                        {hostIdentity
+                          ? 'Joins are unique stealth access payments after this room was minted. Tips are separate stealth sends and do not create new tickets.'
+                          : 'Unlock payment keys to count joins. Reopen this stream and approve the wallet signature, or finish Go Live first.'}
+                      </p>
+                      {detectedPayments.length > 0 && (
+                        <div>
+                          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '8px 0 6px' }}>Recent</p>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {detectedPayments.slice(0, 6).map((payment) => {
+                              const kind = paymentKind(payment);
+                              const amount = parseNativeEthAmount(payment.announcement.metadata);
+                              return (
+                                <p
+                                  key={payment.announcement.txHash}
+                                  className="mono"
+                                  style={{
+                                    fontSize: 11,
+                                    color: 'var(--text-secondary)',
+                                    background: 'var(--bg-elevated)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    padding: 8,
+                                    margin: 0,
+                                    wordBreak: 'break-all',
+                                  }}
+                                >
+                                  {kind === 'tip' ? 'Tip' : 'Join'} · {amount ? `${formatEther(amount)} ETH` : '—'}
+                                </p>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 4px' }}>Access ticket</p>
+                        <p
+                          className="mono"
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--text-secondary)',
+                            background: 'var(--bg-elevated)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: 8,
+                            wordBreak: 'break-all',
+                            margin: 0,
+                          }}
+                        >
+                          {roomCredential}
+                        </p>
+                      </div>
+                      {onTip && (
+                        <div>
+                          <p style={{ fontSize: 13, fontWeight: 600, margin: '4px 0 8px' }}>Tip the creator</p>
+                          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', lineHeight: 1.4 }}>
+                            Private stealth payment. Only the creator sees it. Does not unlock a second ticket.
+                          </p>
+                          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                            {TIP_AMOUNTS.map((amount) => (
+                              <button
+                                key={amount}
+                                type="button"
+                                onClick={() => setTipAmount(amount)}
+                                style={{
+                                  flex: 1,
+                                  height: 36,
+                                  borderRadius: 10,
+                                  border: tipAmount === amount ? '1px solid var(--accent-primary)' : '1px solid var(--border-subtle)',
+                                  background: tipAmount === amount ? 'rgba(124, 92, 255, 0.16)' : 'var(--bg-elevated)',
+                                  color: 'var(--text-primary)',
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                {amount}
+                              </button>
+                            ))}
+                          </div>
+                          <Button variant="primary" size="sm" fullWidth onClick={() => void handleTip()} disabled={tipping}>
+                            {tipping ? 'Sending tip…' : `Send ${tipAmount} ETH`}
+                          </Button>
+                          {tipDone && (
+                            <p style={{ fontSize: 12, color: 'var(--success)', margin: '8px 0 0' }}>{tipDone}</p>
+                          )}
+                          {tipError && (
+                            <p style={{ fontSize: 12, color: 'var(--live)', margin: '8px 0 0' }}>{tipError}</p>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             </>

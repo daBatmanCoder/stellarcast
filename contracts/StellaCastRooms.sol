@@ -3,23 +3,21 @@ pragma solidity ^0.8.20;
 
 /**
  * @title StellaCast Rooms
- * @notice Lightweight room NFT registry for hackathon demo
- * 
- * Each room NFT holds:
- * - Public metadata: title, host ENS, category, tags, status, stealth meta ref
- * - Encrypted access data: room credentials/connection info (viewer needs password to decrypt)
- * 
- * Room lifecycle:
- * 1. Host calls createRoom() → mints NFT with public metadata + encrypted access
- * 2. Browse reads public metadata (no payment required)
- * 3. Viewer pays host via stealth → receives/derives password → decrypts access → enters room
- * 4. Host can update room status (live/offline) via updateRoomStatus()
- * 
- * PRODUCTION NOTES:
- * - Add access control / ownership verification
- * - Consider ERC-721 standard if transferability needed
- * - Add room deletion / cleanup for offline rooms
- * - Optimize gas for metadata storage (IPFS/Arweave for large data)
+ * @notice Room registry for pay-to-view livestreams. Token IDs are the room NFTs.
+ *
+ * On-chain lifecycle:
+ * 1. Host createRoom() — mints a live room NFT
+ * 2. Browse reads getLiveRoomIds() + getRoomMetadata() (no payment)
+ * 3. Viewer pays the host via ERC-5564 stealth (not this contract)
+ * 4. Host endRoom() — burns the live NFT in the same close transaction
+ *
+ * Burn is irreversible: encrypted access is wiped, the room leaves Browse,
+ * and it cannot go live again. A tombstone stays so the host dashboard can
+ * still list ended rooms (title, host, timestamps).
+ *
+ * Not on this contract, because stealth payments never call it:
+ * - paid-join / tip counts (host scanner reads ERC-5564 announcements)
+ * - cross-device tickets (local access credential from the stealth secret)
  */
 contract StellaCastRooms {
     struct RoomMetadata {
@@ -28,23 +26,28 @@ contract StellaCastRooms {
         string hostEns;
         string title;
         string category;
-        string tags; // comma-separated for simplicity
-        string stealthMetaAddress; // host's stealth meta for payments
-        string thumbnail; // URL or IPFS hash
-        uint256 entryPrice; // in wei
+        string tags;
+        string stealthMetaAddress;
+        string thumbnail;
+        uint256 entryPrice;
         bool isLive;
+        bool burned;
         uint256 createdAt;
+        uint256 endedAt;
     }
 
     struct Room {
         RoomMetadata metadata;
-        bytes encryptedAccessData; // encrypted with password derived from stealth payment
+        bytes encryptedAccessData;
     }
 
     uint256 private _nextTokenId = 1;
-    mapping(uint256 => Room) public rooms;
-    mapping(address => uint256[]) public roomsByHost;
-    uint256[] public allRoomIds;
+
+    mapping(uint256 => Room) private rooms;
+    mapping(address => uint256[]) private roomsByHost;
+    uint256[] private allRoomIds;
+    uint256[] private liveRoomIds;
+    mapping(uint256 => uint256) private liveIndexPlusOne;
 
     event RoomCreated(
         uint256 indexed tokenId,
@@ -57,23 +60,12 @@ contract StellaCastRooms {
         uint256 createdAt
     );
 
-    event RoomStatusUpdated(
+    event RoomEnded(
         uint256 indexed tokenId,
-        bool isLive
+        address indexed host,
+        uint256 endedAt
     );
 
-    /**
-     * @notice Create a new room
-     * @param hostEns Host's ENS name
-     * @param title Room title
-     * @param category Room category
-     * @param tags Comma-separated tags
-     * @param stealthMetaAddress Host's stealth meta-address for payments
-     * @param thumbnail Thumbnail URL or IPFS hash
-     * @param entryPrice Entry price in wei
-     * @param encryptedAccessData Encrypted room access credentials
-     * @return tokenId The newly minted room NFT ID
-     */
     function createRoom(
         string memory hostEns,
         string memory title,
@@ -84,29 +76,33 @@ contract StellaCastRooms {
         uint256 entryPrice,
         bytes memory encryptedAccessData
     ) external returns (uint256) {
+        require(bytes(title).length > 0, "Title required");
+        require(bytes(stealthMetaAddress).length > 0, "Stealth meta required");
+
         uint256 tokenId = _nextTokenId++;
 
-        RoomMetadata memory metadata = RoomMetadata({
-            tokenId: tokenId,
-            host: msg.sender,
-            hostEns: hostEns,
-            title: title,
-            category: category,
-            tags: tags,
-            stealthMetaAddress: stealthMetaAddress,
-            thumbnail: thumbnail,
-            entryPrice: entryPrice,
-            isLive: true,
-            createdAt: block.timestamp
-        });
-
         rooms[tokenId] = Room({
-            metadata: metadata,
+            metadata: RoomMetadata({
+                tokenId: tokenId,
+                host: msg.sender,
+                hostEns: hostEns,
+                title: title,
+                category: category,
+                tags: tags,
+                stealthMetaAddress: stealthMetaAddress,
+                thumbnail: thumbnail,
+                entryPrice: entryPrice,
+                isLive: true,
+                burned: false,
+                createdAt: block.timestamp,
+                endedAt: 0
+            }),
             encryptedAccessData: encryptedAccessData
         });
 
         roomsByHost[msg.sender].push(tokenId);
         allRoomIds.push(tokenId);
+        _addLive(tokenId);
 
         emit RoomCreated(
             tokenId,
@@ -123,65 +119,83 @@ contract StellaCastRooms {
     }
 
     /**
-     * @notice Update room live status
-     * @param tokenId Room token ID
-     * @param isLive New live status
+     * @notice Burn the live room NFT. One host transaction. Cannot be undone.
      */
-    function updateRoomStatus(uint256 tokenId, bool isLive) external {
-        require(rooms[tokenId].metadata.host == msg.sender, "Not room owner");
-        rooms[tokenId].metadata.isLive = isLive;
-        emit RoomStatusUpdated(tokenId, isLive);
+    function endRoom(uint256 tokenId) external {
+        Room storage room = rooms[tokenId];
+        require(room.metadata.createdAt > 0, "Room does not exist");
+        require(room.metadata.host == msg.sender, "Not room owner");
+        require(!room.metadata.burned, "Already ended");
+
+        room.metadata.isLive = false;
+        room.metadata.burned = true;
+        room.metadata.endedAt = block.timestamp;
+        room.metadata.stealthMetaAddress = "";
+        delete room.encryptedAccessData;
+        _removeLive(tokenId);
+
+        emit RoomEnded(tokenId, msg.sender, block.timestamp);
     }
 
-    /**
-     * @notice Get room metadata (public)
-     * @param tokenId Room token ID
-     * @return metadata Room metadata
-     */
     function getRoomMetadata(uint256 tokenId) external view returns (RoomMetadata memory) {
         return rooms[tokenId].metadata;
     }
 
-    /**
-     * @notice Get encrypted access data (viewer needs password to decrypt)
-     * @param tokenId Room token ID
-     * @return encryptedAccessData Encrypted room credentials
-     */
     function getEncryptedAccessData(uint256 tokenId) external view returns (bytes memory) {
-        return rooms[tokenId].encryptedAccessData;
+        Room storage room = rooms[tokenId];
+        require(room.metadata.createdAt > 0, "Room does not exist");
+        require(room.metadata.isLive && !room.metadata.burned, "Room ended");
+        return room.encryptedAccessData;
     }
 
-    /**
-     * @notice Get all room IDs
-     * @return Array of all room token IDs
-     */
+    function getLiveRoomIds() external view returns (uint256[] memory) {
+        return liveRoomIds;
+    }
+
     function getAllRoomIds() external view returns (uint256[] memory) {
         return allRoomIds;
     }
 
-    /**
-     * @notice Get rooms by host
-     * @param host Host address
-     * @return Array of room token IDs created by host
-     */
     function getRoomsByHost(address host) external view returns (uint256[] memory) {
         return roomsByHost[host];
     }
 
-    /**
-     * @notice Get total number of rooms
-     * @return Total room count
-     */
     function getTotalRooms() external view returns (uint256) {
         return allRoomIds.length;
     }
 
-    /**
-     * @notice Check if room exists
-     * @param tokenId Room token ID
-     * @return true if room exists
-     */
+    function getLiveRoomCount() external view returns (uint256) {
+        return liveRoomIds.length;
+    }
+
     function roomExists(uint256 tokenId) external view returns (bool) {
         return rooms[tokenId].metadata.createdAt > 0;
+    }
+
+    function isJoinable(uint256 tokenId) external view returns (bool) {
+        RoomMetadata storage meta = rooms[tokenId].metadata;
+        return meta.createdAt > 0 && meta.isLive && !meta.burned;
+    }
+
+    function _addLive(uint256 tokenId) private {
+        liveRoomIds.push(tokenId);
+        liveIndexPlusOne[tokenId] = liveRoomIds.length;
+    }
+
+    function _removeLive(uint256 tokenId) private {
+        uint256 indexPlusOne = liveIndexPlusOne[tokenId];
+        if (indexPlusOne == 0) return;
+
+        uint256 index = indexPlusOne - 1;
+        uint256 lastIndex = liveRoomIds.length - 1;
+        uint256 lastTokenId = liveRoomIds[lastIndex];
+
+        if (index != lastIndex) {
+            liveRoomIds[index] = lastTokenId;
+            liveIndexPlusOne[lastTokenId] = indexPlusOne;
+        }
+
+        liveRoomIds.pop();
+        delete liveIndexPlusOne[tokenId];
     }
 }

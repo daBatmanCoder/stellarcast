@@ -132,18 +132,61 @@ export function computeStealthPrivateKey(
   return bigintTo32Bytes(combined);
 }
 
-/** ERC-5564 native ETH metadata: viewTag || 0xeeeeeeee || placeholder || amount */
-export function encodeNativeEthMetadata(viewTag: number, amountWei: bigint): `0x${string}` {
+export type StealthPaymentKind = 'access' | 'tip';
+
+function metadataBody(metadata: string): string {
+  return metadata.startsWith('0x') || metadata.startsWith('0X') ? metadata.slice(2) : metadata;
+}
+
+function encodeKindByte(kind: StealthPaymentKind, sharedSecret: Uint8Array): string {
+  const raw = kind === 'tip' ? 1 : 0;
+  const mask = sharedSecret.length > 1 ? sharedSecret[1] : 0;
+  return (raw ^ mask).toString(16).padStart(2, '0');
+}
+
+/** ERC-5564 native ETH metadata: viewTag || 0xeeeeeeee || placeholder || amount || blinded kind */
+export function encodeNativeEthMetadata(
+  viewTag: number,
+  amountWei: bigint,
+  kind: StealthPaymentKind = 'access',
+  sharedSecret: Uint8Array
+): `0x${string}` {
   const tag = viewTag.toString(16).padStart(2, '0').slice(-2);
   const amount = padHex(viemToHex(amountWei), { size: 32 }).slice(2);
-  return `0x${tag}${NATIVE_ETH_SENTINEL}${NATIVE_ETH_PLACEHOLDER}${amount}`;
+  if (!sharedSecret || sharedSecret.length < 2) {
+    throw new Error('Shared secret required to encode payment kind');
+  }
+  const kindHex = encodeKindByte(kind, sharedSecret);
+  return `0x${tag}${NATIVE_ETH_SENTINEL}${NATIVE_ETH_PLACEHOLDER}${amount}${kindHex}`;
 }
 
 export function parseViewTagFromMetadata(metadata: string): number {
-  const body = metadata.startsWith('0x') || metadata.startsWith('0X') ? metadata.slice(2) : metadata;
+  const body = metadataBody(metadata);
   if (body.length < 2) return 0;
   const tag = parseInt(body.slice(0, 2), 16);
   return Number.isFinite(tag) ? tag : 0;
+}
+
+export function parseNativeEthAmount(metadata: string): bigint | null {
+  const body = metadataBody(metadata);
+  if (body.length < 114) return null;
+  try {
+    return BigInt(`0x${body.slice(50, 114)}`);
+  } catch {
+    return null;
+  }
+}
+
+export function parseStealthPaymentKind(
+  metadata: string,
+  sharedSecret?: Uint8Array
+): StealthPaymentKind {
+  if (!sharedSecret || sharedSecret.length < 2) return 'access';
+  const body = metadataBody(metadata);
+  if (body.length < 116) return 'access';
+  const encoded = parseInt(body.slice(114, 116), 16);
+  if (!Number.isFinite(encoded)) return 'access';
+  return (encoded ^ sharedSecret[1]) === 1 ? 'tip' : 'access';
 }
 
 export function entryPriceToWei(ethAmount: string): bigint {

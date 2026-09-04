@@ -18,8 +18,10 @@ export interface LiveRoom {
   viewers: number;
   thumbnail: string;
   isLive: boolean;
+  burned?: boolean;
   isFeatured?: boolean;
   createdAt: number; // timestamp in ms
+  endedAt?: number; // timestamp in ms, set after endRoom
   createdBlock?: number; // Sepolia block when the room was minted
   stealthMetaAddress?: string; // host's stealth meta for payments
 }
