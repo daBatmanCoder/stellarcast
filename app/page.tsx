@@ -8,31 +8,27 @@ import { LeftRail } from '@/components/LeftRail';
 import { FeaturedCarousel } from '@/components/FeaturedCarousel';
 import { LiveGrid } from '@/components/LiveGrid';
 import { Inbox, type InboxMessage } from '@/components/Inbox';
-import { ENSIdentityModal } from '@/components/ENSIdentityModal';
+// ENSIdentityModal removed from viewer flow
 import { PaymentModal } from '@/components/PaymentModal';
 import { WalletConnect } from '@/components/WalletConnect';
 import { RoomView } from '@/components/RoomView';
 import { MobileDrawer } from '@/components/MobileDrawer';
 import { GoLiveModal } from '@/components/GoLiveModal';
 import { SEED_ROOMS, type LiveRoom } from '@/lib/data/seed-rooms';
-import type { StealthIdentity } from '@/lib/types/stealth';
 import { generateStealthAddress } from '@/lib/crypto/stealth';
-import { identityToMetaAddress } from '@/lib/crypto/identity';
 import { sendEthTransaction, waitForTransactionReceipt } from '@/lib/blockchain/transactions';
-import { storeENSVerification, getENSVerification } from '@/lib/storage/ens-store';
+import { getENSVerification } from '@/lib/storage/ens-store';
 
 export default function Home() {
   const metamask = useMetaMask();
   
   // Auth state
-  const [identity, setIdentity] = useState<StealthIdentity | null>(null);
   const [metaAddress, setMetaAddress] = useState<string>('');
   const [verifiedEnsName, setVerifiedEnsName] = useState<string>('');
   const [needsWalletConnect, setNeedsWalletConnect] = useState(false);
 
   // UI state
   const [selectedRoom, setSelectedRoom] = useState<LiveRoom | null>(null);
-  const [ensModalOpen, setEnsModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [inboxOpen, setInboxOpen] = useState(false);
   const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
@@ -57,14 +53,7 @@ export default function Home() {
     checkExistingENS();
   }, [metamask.isConnected, metamask.address]);
 
-  const handleIdentityReady = (userIdentity: StealthIdentity, userMetaAddress: string, ensName?: string) => {
-    setIdentity(userIdentity);
-    setMetaAddress(userMetaAddress);
-    if (ensName) {
-      setVerifiedEnsName(ensName);
-    }
-    setNeedsWalletConnect(false);
-  };
+  // Identity handlers removed - viewers use wallet address only
 
   const handleConnectClick = () => {
     setNeedsWalletConnect(true);
@@ -77,42 +66,17 @@ export default function Home() {
       return;
     }
 
-    if (!identity) {
-      setNeedsWalletConnect(true);
-      setSelectedRoom(room);
-      return;
-    }
-
-    // Viewer flow: skip ENS, go directly to payment
+    // Viewer flow: skip ENS/identity - wallet address is enough
+    // Go directly to payment
     setSelectedRoom(room);
+    setCurrentEnsForPayment(room.host);
     setPaymentModalOpen(true);
   };
 
-  const handleENSVerified = async (ensName: string, signature: string, message: string) => {
-    // Store verified ENS
-    if (metamask.address) {
-      await storeENSVerification({
-        walletAddress: metamask.address,
-        ensName,
-        chainId: 11155111,
-        message,
-        signature,
-        verifiedAt: new Date().toISOString()
-      });
-      setVerifiedEnsName(ensName);
-    }
-
-    setCurrentEnsForPayment(ensName);
-    setEnsModalOpen(false);
-    
-    // Open payment modal
-    setTimeout(() => {
-      setPaymentModalOpen(true);
-    }, 300);
-  };
+  // ENS verification handlers removed - not needed for viewer flow
 
   const handlePayment = async (): Promise<{ txHash: string; sharedSecret: Uint8Array }> => {
-    if (!identity || !selectedRoom || !metamask.address) {
+    if (!selectedRoom || !metamask.address) {
       throw new Error('Missing payment requirements');
     }
 
@@ -201,15 +165,12 @@ export default function Home() {
   };
 
   const handleGoLive = () => {
-    // Check if connected and has identity
+    // Check if connected
     if (!metamask.isConnected) {
       setNeedsWalletConnect(true);
       return;
     }
-    if (!identity) {
-      setNeedsWalletConnect(true);
-      return;
-    }
+    // Go Live modal will handle ENS verification
     setGoLiveModalOpen(true);
   };
 
@@ -315,17 +276,7 @@ export default function Home() {
           onUsePassword={handleUsePassword}
         />
 
-        {/* ENS Identity Modal */}
-        <ENSIdentityModal
-          isOpen={ensModalOpen}
-          room={selectedRoom}
-          walletAddress={metamask.address || ''}
-          onClose={() => {
-            setEnsModalOpen(false);
-            setSelectedRoom(null);
-          }}
-          onVerified={handleENSVerified}
-        />
+        {/* ENS Identity Modal - REMOVED for viewers (wallet address is enough) */}
 
         {/* Payment Modal */}
         <PaymentModal
@@ -362,7 +313,7 @@ export default function Home() {
 
         {/* Wallet Connect Overlay */}
         {needsWalletConnect && (
-          <WalletConnect onIdentityReady={handleIdentityReady} />
+          <WalletConnect onIdentityReady={() => setNeedsWalletConnect(false)} />
         )}
       </div>
     </NetworkGuard>
