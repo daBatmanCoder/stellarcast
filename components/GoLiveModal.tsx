@@ -113,6 +113,13 @@ export function GoLiveModal({
       
       if (slots.length > 0) {
         console.log(`Found ${slots.length} existing stealth-meta-address slot(s) for ${name}`);
+        
+        const existingMeta = slots[0].value;
+        if (existingMeta.startsWith('st:eth:0x')) {
+          setStealthMetaAddress(existingMeta);
+          console.log(`Imported existing stealth meta-address from slot [${slots[0].slot}]`);
+        }
+        
         setStealthSetupMode('existing');
       } else {
         console.log(`No existing stealth-meta-address slots found for ${name}`);
@@ -128,11 +135,17 @@ export function GoLiveModal({
   };
 
   const handleDownloadRecipient = () => {
+    let metaForDownload = stealthMetaAddress;
+    
+    if (metaForDownload.startsWith('st:eth:0x')) {
+      metaForDownload = '0x' + metaForDownload.slice(9);
+    }
+    
     const recipientData = {
       schemeId: 1,
-      stealthMetaAddress: stealthMetaAddress,
-      spendingPublicKey: stealthMetaAddress.slice(0, 68),
-      viewingPublicKey: '0x' + stealthMetaAddress.slice(68),
+      stealthMetaAddress: metaForDownload,
+      spendingPublicKey: metaForDownload.slice(0, 68),
+      viewingPublicKey: '0x' + metaForDownload.slice(68),
       ens: activeEns,
       chainId: 11155111
     };
@@ -332,26 +345,26 @@ export function GoLiveModal({
                   marginBottom: '16px'
                 }}>
                   <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--success)', marginBottom: '8px' }}>
-                    ✓ Stealth Payment Already Configured
+                    ✓ Stealth Payment Imported from ENS
                   </p>
                   <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '12px' }}>
-                    Found {existingSlots.length} stealth meta-address{existingSlots.length > 1 ? 'es' : ''} on your ENS:
+                    Using existing stealth-meta-address[{existingSlots[0].slot}] from {activeEns}
                   </p>
-                  {existingSlots.map((slot, idx) => (
-                    <div key={idx} style={{
-                      padding: '10px',
-                      borderRadius: '8px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                      marginBottom: idx < existingSlots.length - 1 ? '8px' : '0'
-                    }}>
-                      <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.56)', marginBottom: '4px' }}>
-                        stealth-meta-address[{slot.slot}]
-                      </p>
-                      <p style={{ fontSize: '10px', fontFamily: 'monospace', color: 'rgba(255, 255, 255, 0.88)', wordBreak: 'break-all' }}>
-                        {slot.value}
-                      </p>
-                    </div>
-                  ))}
+                  <div style={{
+                    padding: '10px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                    marginBottom: '8px'
+                  }}>
+                    <p style={{ fontSize: '10px', fontFamily: 'monospace', color: 'rgba(255, 255, 255, 0.88)', wordBreak: 'break-all' }}>
+                      {existingSlots[0].value}
+                    </p>
+                  </div>
+                  {existingSlots.length > 1 && (
+                    <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.48)' }}>
+                      +{existingSlots.length - 1} more slot{existingSlots.length > 2 ? 's' : ''} found
+                    </p>
+                  )}
                 </div>
 
                 <div style={{
@@ -362,22 +375,41 @@ export function GoLiveModal({
                   marginBottom: '16px'
                 }}>
                   <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-primary)', marginBottom: '8px' }}>
-                    📥 Import Recipient Keys
+                    📥 Download Recipient Keys
                   </p>
                   <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '12px' }}>
-                    To receive and unlock payments made to these addresses, you need the recipient private keys (spending + viewing keys).
+                    Download the recipient.json file with this imported meta-address. You'll need the matching private keys to scan for and decrypt payments.
                   </p>
-                  <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '12px' }}>
-                    If you created these keys on another device or browser, import the <code style={{
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                      backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                      fontFamily: 'monospace',
-                      fontSize: '11px'
-                    }}>recipient.json</code> file here.
-                  </p>
-                  <p style={{ fontSize: '11px', color: 'rgba(255, 185, 0, 0.9)', lineHeight: '16px' }}>
-                    ⚠️ Without the matching keys, you cannot scan for or decrypt payments sent to these addresses.
+                  <button
+                    onClick={handleDownloadRecipient}
+                    style={{
+                      width: '100%',
+                      height: '40px',
+                      borderRadius: '10px',
+                      backgroundColor: 'rgba(124, 92, 255, 0.2)',
+                      border: '1px solid rgba(124, 92, 255, 0.4)',
+                      color: 'var(--accent-primary)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 150ms ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(124, 92, 255, 0.3)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(124, 92, 255, 0.2)';
+                    }}
+                  >
+                    <span>📥</span>
+                    Download recipient.json
+                  </button>
+                  <p style={{ fontSize: '11px', color: 'rgba(255, 185, 0, 0.9)', marginTop: '8px', lineHeight: '16px' }}>
+                    ⚠️ Without the matching private keys, you cannot unlock payments sent to this address.
                   </p>
                 </div>
 
@@ -389,7 +421,7 @@ export function GoLiveModal({
                   marginBottom: '16px'
                 }}>
                   <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.56)', lineHeight: '16px' }}>
-                    <strong>Optional:</strong> You can create an additional stealth meta-address in slot [{existingSlots[existingSlots.length - 1].slot + 1}] if needed (for rotation or multiple devices).
+                    Viewers will pay to this address. If you need to scan payments on this device, you'll need to import or restore the private keys that match this meta-address.
                   </p>
                 </div>
               </>
