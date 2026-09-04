@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { ModalShell } from './ModalShell';
-import { resolveSepoliaENS } from '@/lib/ens/resolver';
+import { resolveSepoliaENS, getStealthMetaSlots } from '@/lib/ens/resolver';
 import { requestENSOwnershipSignature, verifyENSOwnership } from '@/lib/ens/ownership';
 
 function CloseIcon() {
@@ -14,6 +14,7 @@ function CloseIcon() {
 }
 
 type Step = 'ens-verify' | 'stealth-setup' | 'stream-config';
+type StealthSetupMode = 'checking' | 'existing' | 'create';
 
 interface GoLiveModalProps {
   isOpen: boolean;
@@ -42,6 +43,8 @@ export function GoLiveModal({
   const [ensInput, setEnsInput] = useState(ensName);
   const [activeEns, setActiveEns] = useState(ensName);
   const [stealthMetaAddress, setStealthMetaAddress] = useState(metaAddress);
+  const [stealthSetupMode, setStealthSetupMode] = useState<StealthSetupMode>('checking');
+  const [existingSlots, setExistingSlots] = useState<Array<{ slot: number; value: string }>>([]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -50,6 +53,8 @@ export function GoLiveModal({
     setStealthMetaAddress(metaAddress);
     setStep('ens-verify');
     setError('');
+    setStealthSetupMode('checking');
+    setExistingSlots([]);
   }, [isOpen, ensName, metaAddress]);
 
   const categories = [
@@ -101,6 +106,19 @@ export function GoLiveModal({
 
       setActiveEns(name);
       await onEnsVerified?.(name, signature, message);
+      
+      setStealthSetupMode('checking');
+      const slots = await getStealthMetaSlots(name);
+      setExistingSlots(slots);
+      
+      if (slots.length > 0) {
+        console.log(`Found ${slots.length} existing stealth-meta-address slot(s) for ${name}`);
+        setStealthSetupMode('existing');
+      } else {
+        console.log(`No existing stealth-meta-address slots found for ${name}`);
+        setStealthSetupMode('create');
+      }
+      
       setStep('stealth-setup');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Verification failed');
@@ -135,9 +153,6 @@ export function GoLiveModal({
       onStartStream(title, category);
     }
   };
-
-  const textRecordKey = 'eth.stellarcast.stealth';
-  const textRecordValue = stealthMetaAddress;
 
   return (
     <ModalShell isOpen={isOpen} onClose={onClose} allowOverlayClose={step === 'ens-verify'} mobileBottomSheet={true}>
@@ -290,106 +305,166 @@ export function GoLiveModal({
               </p>
             </div>
 
-            <div style={{
-              padding: '16px',
-              borderRadius: '12px',
-              backgroundColor: 'rgba(124, 92, 255, 0.08)',
-              border: '1px solid rgba(124, 92, 255, 0.16)',
-              marginBottom: '16px'
-            }}>
-              <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-primary)', marginBottom: '8px' }}>
-                Stealth Meta-Address
-              </p>
-              <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'rgba(255, 255, 255, 0.72)', wordBreak: 'break-all', marginBottom: '8px' }}>
-                {stealthMetaAddress}
-              </p>
-              <button
-                onClick={handleDownloadRecipient}
-                style={{
-                  width: '100%',
+            {stealthSetupMode === 'checking' && (
+              <div style={{ padding: '24px', textAlign: 'center' }}>
+                <div style={{
+                  width: '40px',
                   height: '40px',
-                  borderRadius: '10px',
-                  backgroundColor: 'rgba(124, 92, 255, 0.2)',
-                  border: '1px solid rgba(124, 92, 255, 0.4)',
-                  color: 'var(--accent-primary)',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 150ms ease',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(124, 92, 255, 0.3)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'rgba(124, 92, 255, 0.2)';
-                }}
-              >
-                <span>📥</span>
-                Download recipient.json
-              </button>
-              <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.48)', marginTop: '8px', textAlign: 'center' }}>
-                Keep this file offline - never upload to servers
-              </p>
-            </div>
-
-            <div style={{
-              padding: '16px',
-              borderRadius: '12px',
-              backgroundColor: 'rgba(255, 185, 0, 0.08)',
-              border: '1px solid rgba(255, 185, 0, 0.24)',
-              marginBottom: '16px'
-            }}>
-              <p style={{ fontSize: '13px', fontWeight: 600, color: '#FFB900', marginBottom: '12px' }}>
-                📝 Add to ENS Text Record
-              </p>
-              <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '12px' }}>
-                Set this text record so viewers can discover your payment address:
-              </p>
-              
-              <div style={{ marginBottom: '10px' }}>
-                <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.56)', marginBottom: '4px' }}>
-                  Key:
+                  margin: '0 auto 12px',
+                  borderRadius: '50%',
+                  border: '2px solid rgba(124, 92, 255, 0.2)',
+                  borderTopColor: 'var(--accent-primary)',
+                  animation: 'spin 0.8s linear infinite'
+                }} />
+                <p style={{ fontSize: '13px', color: 'rgba(255, 255, 255, 0.64)' }}>
+                  Checking for existing stealth payment setup...
                 </p>
-                <div style={{
-                  padding: '8px',
-                  borderRadius: '6px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  fontFamily: 'monospace',
-                  fontSize: '11px',
-                  color: 'var(--text-primary)',
-                  wordBreak: 'break-all'
-                }}>
-                  {textRecordKey}
-                </div>
               </div>
+            )}
 
-              <div style={{ marginBottom: '12px' }}>
-                <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.56)', marginBottom: '4px' }}>
-                  Value:
-                </p>
+            {stealthSetupMode === 'existing' && existingSlots.length > 0 && (
+              <>
                 <div style={{
-                  padding: '8px',
-                  borderRadius: '6px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.3)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  fontFamily: 'monospace',
-                  fontSize: '10px',
-                  color: 'var(--text-primary)',
-                  wordBreak: 'break-all'
+                  padding: '16px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(0, 245, 147, 0.1)',
+                  border: '1px solid rgba(0, 245, 147, 0.3)',
+                  marginBottom: '16px'
                 }}>
-                  {textRecordValue}
+                  <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--success)', marginBottom: '8px' }}>
+                    ✓ Stealth Payment Already Configured
+                  </p>
+                  <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '12px' }}>
+                    Found {existingSlots.length} stealth meta-address{existingSlots.length > 1 ? 'es' : ''} on your ENS:
+                  </p>
+                  {existingSlots.map((slot, idx) => (
+                    <div key={idx} style={{
+                      padding: '10px',
+                      borderRadius: '8px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                      marginBottom: idx < existingSlots.length - 1 ? '8px' : '0'
+                    }}>
+                      <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.56)', marginBottom: '4px' }}>
+                        stealth-meta-address[{slot.slot}]
+                      </p>
+                      <p style={{ fontSize: '10px', fontFamily: 'monospace', color: 'rgba(255, 255, 255, 0.88)', wordBreak: 'break-all' }}>
+                        {slot.value}
+                      </p>
+                    </div>
+                  ))}
                 </div>
-              </div>
 
-              <p style={{ fontSize: '11px', lineHeight: '16px', color: 'rgba(255, 255, 255, 0.56)' }}>
-                Visit <strong>app.ens.domains</strong> → Your Name → Records → Add Text Record. Paste the key and value above.
-              </p>
-            </div>
+                <div style={{
+                  padding: '16px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(124, 92, 255, 0.08)',
+                  border: '1px solid rgba(124, 92, 255, 0.16)',
+                  marginBottom: '16px'
+                }}>
+                  <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-primary)', marginBottom: '8px' }}>
+                    📥 Import Recipient Keys
+                  </p>
+                  <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '12px' }}>
+                    To receive and unlock payments made to these addresses, you need the recipient private keys (spending + viewing keys).
+                  </p>
+                  <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '12px' }}>
+                    If you created these keys on another device or browser, import the <code style={{
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                      fontFamily: 'monospace',
+                      fontSize: '11px'
+                    }}>recipient.json</code> file here.
+                  </p>
+                  <p style={{ fontSize: '11px', color: 'rgba(255, 185, 0, 0.9)', lineHeight: '16px' }}>
+                    ⚠️ Without the matching keys, you cannot scan for or decrypt payments sent to these addresses.
+                  </p>
+                </div>
+
+                <div style={{
+                  padding: '12px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  marginBottom: '16px'
+                }}>
+                  <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.56)', lineHeight: '16px' }}>
+                    <strong>Optional:</strong> You can create an additional stealth meta-address in slot [{existingSlots[existingSlots.length - 1].slot + 1}] if needed (for rotation or multiple devices).
+                  </p>
+                </div>
+              </>
+            )}
+
+            {stealthSetupMode === 'create' && (
+              <>
+                <div style={{
+                  padding: '16px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(124, 92, 255, 0.08)',
+                  border: '1px solid rgba(124, 92, 255, 0.16)',
+                  marginBottom: '16px'
+                }}>
+                  <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--accent-primary)', marginBottom: '8px' }}>
+                    Create Stealth Payment Setup
+                  </p>
+                  <p style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.64)', marginBottom: '12px' }}>
+                    No stealth payment setup found. Let's create one and publish it to your ENS.
+                  </p>
+                  <p style={{ fontSize: '11px', fontFamily: 'monospace', color: 'rgba(255, 255, 255, 0.56)', marginBottom: '8px', wordBreak: 'break-all' }}>
+                    Your meta-address: {stealthMetaAddress}
+                  </p>
+                  <button
+                    onClick={handleDownloadRecipient}
+                    style={{
+                      width: '100%',
+                      height: '40px',
+                      borderRadius: '10px',
+                      backgroundColor: 'rgba(124, 92, 255, 0.2)',
+                      border: '1px solid rgba(124, 92, 255, 0.4)',
+                      color: 'var(--accent-primary)',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 150ms ease',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(124, 92, 255, 0.3)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'rgba(124, 92, 255, 0.2)';
+                    }}
+                  >
+                    <span>📥</span>
+                    Download recipient.json
+                  </button>
+                  <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.48)', marginTop: '8px', textAlign: 'center' }}>
+                    Keep this file offline - never upload to servers
+                  </p>
+                </div>
+
+                <div style={{
+                  padding: '12px',
+                  borderRadius: '12px',
+                  backgroundColor: 'rgba(0, 245, 147, 0.08)',
+                  border: '1px solid rgba(0, 245, 147, 0.16)',
+                  marginBottom: '16px'
+                }}>
+                  <p style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.80)' }}>
+                    💡 When you continue, we'll write <code style={{
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.3)',
+                      fontFamily: 'monospace',
+                      fontSize: '11px'
+                    }}>stealth-meta-address[1]</code> to your ENS on Sepolia (requires MetaMask confirmation).
+                  </p>
+                </div>
+              </>
+            )}
           </>
         )}
 
@@ -554,7 +629,7 @@ export function GoLiveModal({
           </button>
         )}
 
-        {step === 'stealth-setup' && (
+        {step === 'stealth-setup' && stealthSetupMode !== 'checking' && (
           <button
             onClick={() => setStep('stream-config')}
             style={{
