@@ -275,10 +275,56 @@ export function RoomView({
                 <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '8px 0 0', lineHeight: 1.4 }}>
                   {isHost
                     ? 'Use the host dashboard for paid joins and tips. Camera and WebRTC stay off until payments are solid.'
-                    : 'You are in the paid room. Tip the creator from the session panel. Livestream video is not on yet.'}
+                    : room.isLive
+                      ? 'You are in the paid room. Tip the creator from the session panel. Livestream video is not on yet.'
+                      : 'The host closed this room. It left Browse and cannot be reopened.'}
                 </p>
               </div>
             </div>
+            {!isHost && !room.isLive ? (
+              <div
+                role="alertdialog"
+                aria-labelledby="viewer-ended-title"
+                aria-describedby="viewer-ended-copy"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 25,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 24,
+                  background: 'rgba(0, 0, 0, 0.78)',
+                }}
+              >
+                <div
+                  style={{
+                    width: '100%',
+                    maxWidth: 360,
+                    padding: 20,
+                    borderRadius: 'var(--radius-lg)',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border-subtle)',
+                  }}
+                >
+                  <p
+                    id="viewer-ended-title"
+                    style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', color: 'var(--text-primary)' }}
+                  >
+                    Livestream ended
+                  </p>
+                  <p
+                    id="viewer-ended-copy"
+                    style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--text-secondary)', margin: '0 0 16px' }}
+                  >
+                    The host closed {room.title}. Tips are closed. Your access ticket stays saved if they go live again.
+                  </p>
+                  <Button variant="primary" fullWidth onClick={handleLeave}>
+                    Back to Browse
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div style={{ padding: 16, borderTop: '1px solid var(--border-subtle)' }}>
@@ -293,7 +339,7 @@ export function RoomView({
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                {!isHost && onTip && (
+                {!isHost && onTip && room.isLive && (
                   <Button
                     variant="primary"
                     size="sm"
@@ -412,7 +458,7 @@ export function RoomView({
                           {roomCredential}
                         </p>
                       </div>
-                      {onTip && (
+                      {onTip && room.isLive && (
                         <div>
                           <p style={{ fontSize: 13, fontWeight: 600, margin: '4px 0 8px' }}>Tip the creator</p>
                           <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 10px', lineHeight: 1.4 }}>

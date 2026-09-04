@@ -48,6 +48,7 @@ import {
   listAccessTickets,
   type AccessTicket,
 } from '@/lib/storage/rooms-store';
+import { getRoomMetadata, parseRoomTokenId } from '@/lib/blockchain/rooms-contract';
 
 const SIDEBAR_KEY = 'stellarcast-sidebar-collapsed';
 const ENTRY_PRICE_ETH = '0.001';
@@ -214,6 +215,45 @@ export default function Home() {
       cancelled = true;
     };
   }, [paymentModalOpen, selectedRoom, metamask.address]);
+
+  useEffect(() => {
+    if (!activeRoom || activeRoom.credential === 'host-stream' || !activeRoom.room.isLive) {
+      return;
+    }
+
+    const roomId = activeRoom.room.id;
+    const tokenId = parseRoomTokenId(roomId);
+    if (tokenId === undefined) return;
+
+    let cancelled = false;
+    const checkEnded = async () => {
+      try {
+        const meta = await getRoomMetadata(tokenId);
+        if (cancelled || !meta || meta.isLive) return;
+        setActiveRoom((prev) => {
+          if (!prev || prev.room.id !== roomId || !prev.room.isLive) return prev;
+          return {
+            ...prev,
+            room: {
+              ...prev.room,
+              isLive: false,
+              burned: meta.burned,
+              endedAt: meta.endedAt > 0 ? meta.endedAt * 1000 : Date.now(),
+            },
+          };
+        });
+      } catch {
+        // Keep the session if Sepolia read fails. Do not fake an end.
+      }
+    };
+
+    void checkEnded();
+    const id = window.setInterval(checkEnded, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [activeRoom?.room.id, activeRoom?.credential, activeRoom?.room.isLive]);
 
   const refreshReceivingStatus = async (
     wallet: string,
@@ -461,6 +501,9 @@ export default function Home() {
     if (!activeRoom || !metamask.address || activeRoom.credential === 'host-stream') {
       throw new Error('Connect the wallet that paid, then tip from inside the room');
     }
+    if (!activeRoom.room.isLive) {
+      throw new Error('This livestream ended. Tips are closed');
+    }
     await sendStealthPayment(activeRoom.room, metamask.address, amountEth, 'tip');
   };
 
@@ -492,7 +535,7 @@ export default function Home() {
     if (!session) return;
 
     if (session.credential === 'host-stream' && metamask.address && session.room.isLive) {
-      const { parseRoomTokenId, endRoomOnChain } = await import('@/lib/blockchain/rooms-contract');
+      const { endRoomOnChain } = await import('@/lib/blockchain/rooms-contract');
       const tokenId = parseRoomTokenId(session.room.id);
       if (tokenId === undefined) {
         setActiveRoom(null);
@@ -513,6 +556,10 @@ export default function Home() {
         setHostRooms((prev) => prev.filter((room) => room.id !== ended.id));
         setActiveRoom(null);
         void reloadRooms();
+        setAppNotice({
+          title: 'Stream ended',
+          body: 'Viewers still in the room will be told it closed. Payments stay in one-time stealth addresses from your recipient.json — they are not in this wallet.',
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : '';
         if (message.toLowerCase().includes('reject') || message.toLowerCase().includes('denied')) {
