@@ -22,7 +22,7 @@ export const ROOM_CONTRACT_ADDRESS = '0x4D34702b7967272adba2A361766cC461CF72f60a
 const ROOMS_ABI = parseAbi([
   'function createRoom(string hostEns, string title, string category, string tags, string stealthMetaAddress, string thumbnail, uint256 entryPrice, bytes encryptedAccessData) returns (uint256)',
   'function updateRoomStatus(uint256 tokenId, bool isLive)',
-  'function getRoomMetadata(uint256 tokenId) view returns (tuple(uint256 tokenId, address host, string hostEns, string title, string category, string tags, string stealthMetaAddress, string thumbnail, uint256 entryPrice, bool isLive, uint256 createdAt))',
+  'function getRoomMetadata(uint256 tokenId) view returns (uint256, address, string, string, string, string, string, string, uint256, bool, uint256)',
   'function getEncryptedAccessData(uint256 tokenId) view returns (bytes)',
   'function getAllRoomIds() view returns (uint256[])',
   'function getRoomsByHost(address host) view returns (uint256[])',

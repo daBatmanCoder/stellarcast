@@ -78,7 +78,6 @@ export function ContentCard({ room, onSelect }: ContentCardProps) {
           </p>
           <p className="truncate-1" style={{ fontSize: 12, color: 'var(--text-muted)', margin: '2px 0 0' }}>
             {room.category}
-            {room.isDemoSeed ? ' · Demo' : ''}
           </p>
           {room.tags.length > 0 && (
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
