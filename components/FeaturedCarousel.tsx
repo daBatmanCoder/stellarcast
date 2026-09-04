@@ -10,9 +10,9 @@ interface FeaturedCarouselProps {
 export function FeaturedCarousel({ room, onJoin }: FeaturedCarouselProps) {
   return (
     <div className="w-full mb-8">
-      <div className="grid grid-cols-12 gap-4">
+      <div className="featured-grid" style={{ display: 'grid', gap: '16px' }}>
         {/* Player */}
-        <div className="col-span-8">
+        <div>
           <div
             className="relative rounded-lg overflow-hidden"
             style={{

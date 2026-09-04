@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 interface TopNavProps {
   isConnected: boolean;
@@ -20,10 +20,22 @@ function MenuIcon() {
 
 export function TopNav({ isConnected, address, verifiedEnsName, onConnect, onMenuToggle }: TopNavProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMobile, setIsMobile] = useState(() => 
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 768px)');
+    setIsMobile(mediaQuery.matches);
+    
+    const handleChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
 
   return (
     <nav
-      className="fixed top-0 left-0 right-0 z-50 flex items-center px-4 gap-3 topnav-mobile"
+      className="fixed top-0 left-0 right-0 z-50 flex items-center px-4 gap-3"
       style={{
         height: '48px',
         backgroundColor: 'var(--elevated)',
@@ -33,8 +45,9 @@ export function TopNav({ isConnected, address, verifiedEnsName, onConnect, onMen
       {/* Hamburger menu - mobile only */}
       <button
         onClick={onMenuToggle}
-        className="hamburger-btn flex items-center justify-center"
+        className="flex items-center justify-center"
         style={{
+          display: isMobile ? 'flex' : 'none',
           width: '44px',
           height: '44px',
           border: 'none',
@@ -54,20 +67,34 @@ export function TopNav({ isConnected, address, verifiedEnsName, onConnect, onMen
       {/* Logo */}
       <div className="flex items-center gap-2">
         <div
-          className="w-8 h-8 rounded flex items-center justify-center font-bold text-white text-sm logo-desktop"
-          style={{ backgroundColor: 'var(--accent)' }}
+          className="rounded flex items-center justify-center font-bold text-white"
+          style={{ 
+            backgroundColor: 'var(--accent)',
+            width: isMobile ? '32px' : '32px',
+            height: isMobile ? '32px' : '32px',
+            fontSize: isMobile ? '12px' : '14px'
+          }}
         >
           S
         </div>
-        <span className="font-bold text-base topnav-title" style={{ color: 'var(--text-primary)' }}>
+        <span 
+          className="font-bold" 
+          style={{ 
+            color: 'var(--text-primary)',
+            fontSize: isMobile ? '14px' : '18px'
+          }}
+        >
           STELLARCAST
         </span>
       </div>
 
       {/* Browse - desktop only */}
       <button
-        className="browse-btn px-3 py-1.5 text-sm font-medium hover:bg-[var(--surface)] rounded transition-colors"
-        style={{ color: 'var(--text-primary)' }}
+        className="px-3 py-1.5 text-sm font-medium hover:bg-[var(--surface)] rounded transition-colors"
+        style={{ 
+          color: 'var(--text-primary)',
+          display: isMobile ? 'none' : 'block'
+        }}
       >
         Browse
       </button>
@@ -93,24 +120,32 @@ export function TopNav({ isConnected, address, verifiedEnsName, onConnect, onMen
       <div className="flex items-center gap-2">
         {isConnected && address ? (
           <div
-            className="flex items-center gap-2 px-3 py-1.5 rounded address-badge"
-            style={{ backgroundColor: 'var(--surface)' }}
+            className="flex items-center gap-2 rounded"
+            style={{ 
+              backgroundColor: 'var(--surface)',
+              padding: isMobile ? '6px 10px' : '6px 12px',
+              fontSize: isMobile ? '11px' : '14px'
+            }}
           >
             <div
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: 'var(--success)' }}
+              className="rounded-full"
+              style={{ 
+                backgroundColor: 'var(--success)',
+                width: '8px',
+                height: '8px'
+              }}
             ></div>
             {verifiedEnsName ? (
               <div className="flex items-center gap-1">
-                <span className="text-sm font-semibold" style={{ color: 'var(--accent)' }}>
+                <span className="font-semibold" style={{ color: 'var(--accent)' }}>
                   {verifiedEnsName}
                 </span>
-                <span className="text-xs" style={{ color: 'var(--success)' }}>
+                <span style={{ color: 'var(--success)', fontSize: '12px' }}>
                   ✓
                 </span>
               </div>
             ) : (
-              <span className="mono text-xs" style={{ color: 'var(--text-secondary)' }}>
+              <span className="mono" style={{ color: 'var(--text-secondary)' }}>
                 {address.slice(0, 6)}...{address.slice(-4)}
               </span>
             )}
@@ -118,14 +153,15 @@ export function TopNav({ isConnected, address, verifiedEnsName, onConnect, onMen
         ) : (
           <button
             onClick={onConnect}
-            className="connect-btn rounded text-sm font-semibold transition-colors"
+            className="rounded font-semibold transition-colors"
             style={{
               height: '44px',
-              padding: '0 16px',
+              padding: isMobile ? '0 12px' : '0 16px',
               backgroundColor: 'var(--accent)',
               color: 'white',
               border: 'none',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              fontSize: isMobile ? '13px' : '14px'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.backgroundColor = 'var(--accent-hover)';
@@ -138,37 +174,6 @@ export function TopNav({ isConnected, address, verifiedEnsName, onConnect, onMen
           </button>
         )}
       </div>
-
-      <style jsx>{`
-        @media (max-width: 768px) {
-          .hamburger-btn {
-            display: flex !important;
-          }
-          .browse-btn {
-            display: none;
-          }
-          .search-container {
-            max-width: none;
-          }
-          .logo-desktop {
-            width: 32px;
-            height: 32px;
-            font-size: 12px;
-          }
-          .topnav-title {
-            font-size: 14px;
-          }
-          .address-badge {
-            font-size: 11px;
-            padding: 6px 10px;
-          }
-        }
-        @media (min-width: 769px) {
-          .hamburger-btn {
-            display: none;
-          }
-        }
-      `}</style>
     </nav>
   );
 }

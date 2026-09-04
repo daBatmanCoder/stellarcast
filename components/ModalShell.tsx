@@ -20,7 +20,9 @@ export function ModalShell({
 }: ModalShellProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => 
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches
+  );
 
   // Handle client-side mounting + mobile detection
   useEffect(() => {
