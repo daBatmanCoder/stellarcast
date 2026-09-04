@@ -55,7 +55,7 @@ export function ModalShell({
 
   const modalContent = (
     <>
-      {/* Overlay backdrop with blur */}
+      {/* Overlay SEPARATE layer */}
       <div
         style={{
           position: 'fixed',
@@ -68,11 +68,11 @@ export function ModalShell({
           backgroundColor: 'rgba(0, 0, 0, 0.72)',
           backdropFilter: 'blur(8px)',
           WebkitBackdropFilter: 'blur(8px)',
-          zIndex: 50
+          zIndex: 1000
         }}
       />
 
-      {/* Centering container */}
+      {/* Centering layer SEPARATE */}
       <div
         onClick={handleOverlayClick}
         style={{
@@ -81,15 +81,11 @@ export function ModalShell({
           right: 0,
           bottom: 0,
           left: 0,
-          width: '100vw',
-          height: '100vh',
           display: 'flex',
           alignItems: mobileBottomSheet ? 'flex-end' : 'center',
           justifyContent: 'center',
-          padding: mobileBottomSheet ? 0 : 16,
-          zIndex: 51,
-          overflowY: 'auto',
-          pointerEvents: 'auto'
+          padding: 16,
+          zIndex: 1010
         }}
       >
         {/* Card */}
@@ -100,61 +96,18 @@ export function ModalShell({
           style={{
             position: 'relative',
             width: '100%',
-            maxWidth: mobileBottomSheet ? '100%' : 440,
-            minWidth: 320,
-            borderRadius: mobileBottomSheet ? '20px 20px 0 0' : 16,
+            maxWidth: mobileBottomSheet ? '100%' : 400,
+            borderRadius: mobileBottomSheet ? '20px 20px 0 0' : 24,
             backgroundColor: '#16161D',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
             boxShadow: '0 24px 48px rgba(0, 0, 0, 0.48)',
-            animation: 'modal-card-enter 200ms ease-out forwards',
-            paddingBottom: mobileBottomSheet ? 'env(safe-area-inset-bottom, 0px)' : 0,
-            margin: '0 auto',
-            pointerEvents: 'auto'
+            paddingBottom: mobileBottomSheet ? 'env(safe-area-inset-bottom, 0px)' : 0
           }}
         >
           {children}
         </div>
       </div>
 
-      <style>{`
-        @keyframes modal-overlay-fade {
-          from {
-            opacity: 0;
-          }
-          to {
-            opacity: 1;
-          }
-        }
-
-        @keyframes modal-card-enter {
-          from {
-            opacity: 0;
-            transform: scale(0.96) ${mobileBottomSheet ? 'translateY(20px)' : ''};
-          }
-          to {
-            opacity: 1;
-            transform: scale(1) translateY(0);
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          @keyframes modal-overlay-fade,
-          @keyframes modal-card-enter {
-            from, to {
-              opacity: 1;
-              transform: none;
-            }
-          }
-        }
-
-        @media (max-width: 640px) {
-          ${mobileBottomSheet ? `
-            [role="dialog"] {
-              border-radius: 20px 20px 0 0 !important;
-            }
-          ` : ''}
-        }
-      `}</style>
     </>
   );
 

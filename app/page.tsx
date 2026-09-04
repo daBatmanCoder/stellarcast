@@ -193,11 +193,6 @@ export default function Home() {
     setActiveRoom(null);
   };
 
-  // Show wallet connect if needed
-  if (needsWalletConnect || (!identity && metamask.isConnected)) {
-    return <WalletConnect onIdentityReady={handleIdentityReady} />;
-  }
-
   return (
     <NetworkGuard>
       <div style={{ backgroundColor: 'var(--base)', minHeight: '100vh' }}>
@@ -301,6 +296,11 @@ export default function Home() {
             roomCredential={activeRoom.credential}
             onLeave={handleLeaveRoom}
           />
+        )}
+
+        {/* Wallet Connect Overlay */}
+        {(needsWalletConnect || (!identity && metamask.isConnected)) && (
+          <WalletConnect onIdentityReady={handleIdentityReady} />
         )}
       </div>
     </NetworkGuard>
