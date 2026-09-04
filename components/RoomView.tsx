@@ -50,6 +50,7 @@ export function RoomView({
   const [streamStatus, setStreamStatus] = useState('');
   const [streamError, setStreamError] = useState('');
   const [hasStream, setHasStream] = useState(false);
+  const [streamRetry, setStreamRetry] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const scanner = useAnnouncementScanner({
@@ -115,7 +116,7 @@ export function RoomView({
         videoRef.current.srcObject = null;
       }
     };
-  }, [room.id, room.isLive, isHost]);
+  }, [room.id, room.isLive, isHost, streamRetry]);
 
   const confirmWord = room.title.trim() || 'END';
   const titleMatches = endConfirmText.trim().toLowerCase() === confirmWord.toLowerCase();
@@ -349,6 +350,13 @@ export function RoomView({
                           ? 'Waiting for the host camera. Stay in the room — this reconnects when they go live.'
                           : 'The host closed this room. It left Browse and cannot be reopened.')}
                   </p>
+                  {streamError && room.isLive ? (
+                    <div style={{ marginTop: 14 }}>
+                      <Button variant="primary" size="sm" onClick={() => setStreamRetry((n) => n + 1)}>
+                        Retry camera
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}
