@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { LiveRoom } from '@/lib/data/seed-rooms';
+import type { ReceivingStatus } from '@/lib/stealth/receiving';
 import { TopNav } from './TopNav';
 import { LeftRail } from './LeftRail';
 import { MobileDrawer } from './MobileDrawer';
@@ -20,10 +21,16 @@ interface AppShellProps {
   address?: string;
   verifiedEnsName?: string;
   unreadCount: number;
+  receivingStatus?: ReceivingStatus;
+  isSwitchingAccount?: boolean;
   onConnect: () => void;
   onGoLive: () => void;
   onInboxToggle: () => void;
   onBrowse?: () => void;
+  onSetupReceiving?: () => void;
+  onViewStealthAddress?: () => void;
+  onSwitchAccount?: () => void;
+  onDisconnect?: () => void;
   inboxOpen?: boolean;
 }
 
@@ -41,10 +48,16 @@ export function AppShell({
   address,
   verifiedEnsName,
   unreadCount,
+  receivingStatus,
+  isSwitchingAccount,
   onConnect,
   onGoLive,
   onInboxToggle,
   onBrowse,
+  onSetupReceiving,
+  onViewStealthAddress,
+  onSwitchAccount,
+  onDisconnect,
   inboxOpen,
 }: AppShellProps) {
   return (
@@ -56,11 +69,17 @@ export function AppShell({
         searchQuery={searchQuery}
         onSearchChange={onSearchChange}
         unreadCount={unreadCount}
+        receivingStatus={receivingStatus}
+        isSwitchingAccount={isSwitchingAccount}
         onConnect={onConnect}
         onMenuToggle={() => onMobileDrawerChange(true)}
         onGoLive={onGoLive}
         onInboxToggle={onInboxToggle}
         onBrowse={onBrowse}
+        onSetupReceiving={onSetupReceiving}
+        onViewStealthAddress={onViewStealthAddress}
+        onSwitchAccount={onSwitchAccount}
+        onDisconnect={onDisconnect}
       />
 
       <LeftRail

@@ -8,6 +8,8 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   isMetaMaskInstalled,
   connectMetaMask,
+  switchMetaMaskAccount,
+  disconnectMetaMask,
   getAccounts,
   getChainId,
   onAccountsChanged,
@@ -26,6 +28,7 @@ export function useMetaMask() {
   });
 
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
 
   // Initialize state
   useEffect(() => {
@@ -33,9 +36,9 @@ export function useMetaMask() {
 
     const initialize = async () => {
       const installed = isMetaMaskInstalled();
-      
+
       if (!installed) {
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           isInstalled: false,
           error: 'MetaMask not installed',
@@ -63,16 +66,16 @@ export function useMetaMask() {
     if (!state.isInstalled) return;
 
     const unsubscribeAccounts = onAccountsChanged((accounts) => {
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         accounts,
         isConnected: accounts.length > 0,
-        error: accounts.length === 0 ? 'Disconnected from MetaMask' : null,
+        error: accounts.length === 0 ? null : prev.error,
       }));
     });
 
     const unsubscribeChain = onChainChanged((chainId) => {
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         chainId,
       }));
@@ -86,7 +89,7 @@ export function useMetaMask() {
 
   const connect = useCallback(async () => {
     if (!state.isInstalled) {
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         error: 'MetaMask is not installed. Please install the MetaMask browser extension.',
       }));
@@ -96,7 +99,7 @@ export function useMetaMask() {
     if (isConnecting) return false;
 
     setIsConnecting(true);
-    setState(prev => ({ ...prev, error: null }));
+    setState((prev) => ({ ...prev, error: null }));
 
     try {
       const accounts = await connectMetaMask();
@@ -114,8 +117,8 @@ export function useMetaMask() {
       return true;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to connect to MetaMask';
-      
-      setState(prev => ({
+
+      setState((prev) => ({
         ...prev,
         error: errorMessage,
       }));
@@ -125,19 +128,65 @@ export function useMetaMask() {
     }
   }, [state.isInstalled, isConnecting]);
 
-  const disconnect = useCallback(() => {
-    // MetaMask doesn't have a programmatic disconnect
-    // User must disconnect through MetaMask UI
-    setState(prev => ({
+  const switchAccount = useCallback(async () => {
+    if (!state.isInstalled) {
+      setState((prev) => ({
+        ...prev,
+        error: 'MetaMask is not installed.',
+      }));
+      return false;
+    }
+
+    if (isSwitching) return false;
+    setIsSwitching(true);
+    setState((prev) => ({ ...prev, error: null }));
+
+    try {
+      const accounts = await switchMetaMaskAccount();
+      const chainId = await getChainId();
+
+      setState({
+        isInstalled: true,
+        isConnected: accounts.length > 0,
+        accounts,
+        chainId,
+        error: null,
+      });
+
+      setIsSwitching(false);
+      return true;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to switch account';
+      setState((prev) => ({
+        ...prev,
+        error: errorMessage,
+      }));
+      setIsSwitching(false);
+      return false;
+    }
+  }, [state.isInstalled, isSwitching]);
+
+  const disconnect = useCallback(async () => {
+    try {
+      await disconnectMetaMask();
+    } catch {
+      // ignore revoke failures
+    }
+
+    setState((prev) => ({
       ...prev,
-      error: 'Please disconnect through MetaMask extension',
+      isConnected: false,
+      accounts: [],
+      error: null,
     }));
   }, []);
 
   return {
     ...state,
     isConnecting,
+    isSwitching,
     connect,
+    switchAccount,
     disconnect,
     networkName: state.chainId ? getNetworkName(state.chainId) : null,
     address: state.accounts[0] || null,

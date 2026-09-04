@@ -10,6 +10,7 @@ import { ModalShell } from './ModalShell';
 
 interface WalletConnectProps {
   onIdentityReady: (identity: StealthIdentity, metaAddress: string, ensName?: string) => void;
+  onDismiss?: () => void;
 }
 
 function CopyIcon() {
@@ -37,7 +38,7 @@ function CloseIcon() {
   );
 }
 
-export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
+export function WalletConnect({ onIdentityReady, onDismiss }: WalletConnectProps) {
   const metamask = useMetaMask();
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [authError, setAuthError] = useState<string>('');
@@ -51,10 +52,22 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDisconnect = () => {
-    metamask.disconnect();
+  const handleDisconnect = async () => {
+    await metamask.disconnect();
     setAuthError('');
     setWarningMessage('');
+    onDismiss?.();
+  };
+
+  const handleSwitchAccount = async () => {
+    setAuthError('');
+    setWarningMessage('');
+    await metamask.switchAccount();
+  };
+
+  const handleDismiss = () => {
+    if (isAuthenticating) return;
+    onDismiss?.();
   };
 
   const handleConnect = async () => {
@@ -225,10 +238,10 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
     );
   }
 
-  const allowClose = !isAuthenticating && !metamask.isConnected;
+  const allowClose = !isAuthenticating && (!metamask.isConnected || !!onDismiss);
 
   return (
-    <ModalShell isOpen={true} allowOverlayClose={allowClose} mobileBottomSheet={true}>
+    <ModalShell isOpen={true} allowOverlayClose={allowClose} onClose={handleDismiss} mobileBottomSheet={true}>
       {/* Accent rail */}
       <div style={{ 
         position: 'absolute',
@@ -243,7 +256,7 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
       {/* Close button */}
       {allowClose && (
         <button
-          onClick={handleDisconnect}
+          onClick={handleDismiss}
           style={{
             position: 'absolute',
             top: '8px',
@@ -452,6 +465,25 @@ export function WalletConnect({ onIdentityReady }: WalletConnectProps) {
               }}
             >
               Sign to Continue
+            </button>
+            <button
+              onClick={handleSwitchAccount}
+              disabled={metamask.isSwitching}
+              style={{
+                width: '100%',
+                height: '44px',
+                borderRadius: '14px',
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                color: 'rgba(255, 255, 255, 0.72)',
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: metamask.isSwitching ? 'not-allowed' : 'pointer',
+                opacity: metamask.isSwitching ? 0.6 : 1,
+                transition: 'all 150ms ease'
+              }}
+            >
+              {metamask.isSwitching ? 'Switching…' : 'Switch account'}
             </button>
             <button
               onClick={handleDisconnect}

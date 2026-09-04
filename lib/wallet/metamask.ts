@@ -52,6 +52,57 @@ export async function connectMetaMask(): Promise<string[]> {
 }
 
 /**
+ * Open MetaMask account picker so the user can switch accounts.
+ * Uses wallet_requestPermissions which forces the permissions/account UI.
+ */
+export async function switchMetaMaskAccount(): Promise<string[]> {
+  if (!isMetaMaskInstalled()) {
+    throw new Error('MetaMask is not installed. Please install MetaMask extension.');
+  }
+
+  try {
+    await window.ethereum!.request({
+      method: 'wallet_requestPermissions',
+      params: [{ eth_accounts: {} }],
+    });
+
+    const accounts = await getAccounts();
+    if (!accounts || accounts.length === 0) {
+      throw new Error('No accounts selected in MetaMask');
+    }
+    return accounts;
+  } catch (error) {
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('reject') || msg.includes('denied')) {
+        throw new Error('Account switch cancelled');
+      }
+      throw error;
+    }
+    throw new Error('Failed to switch MetaMask account');
+  }
+}
+
+/**
+ * Best-effort disconnect: revoke eth_accounts permission when supported,
+ * otherwise clear to empty accounts locally. MetaMask may still keep the session.
+ */
+export async function disconnectMetaMask(): Promise<void> {
+  if (!isMetaMaskInstalled()) {
+    return;
+  }
+
+  try {
+    await window.ethereum!.request({
+      method: 'wallet_revokePermissions',
+      params: [{ eth_accounts: {} }],
+    });
+  } catch {
+    // Older MetaMask builds may not support revoke — local session clear still applies
+  }
+}
+
+/**
  * Get currently connected accounts (doesn't trigger popup)
  */
 export async function getAccounts(): Promise<string[]> {

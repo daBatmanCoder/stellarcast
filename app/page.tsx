@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useMetaMask } from '@/lib/wallet/useMetaMask';
 import { NetworkGuard } from '@/components/NetworkGuard';
 import { AppShell } from '@/components/AppShell';
@@ -8,28 +8,39 @@ import { FeaturedCarousel } from '@/components/FeaturedCarousel';
 import { LiveGrid } from '@/components/LiveGrid';
 import { CategoryShelf } from '@/components/CategoryShelf';
 import { Inbox, type InboxMessage } from '@/components/Inbox';
-// ENSIdentityModal removed from viewer flow — wallet address is enough to pay
 import { PaymentModal } from '@/components/PaymentModal';
 import { WalletConnect } from '@/components/WalletConnect';
 import { RoomView } from '@/components/RoomView';
 import { GoLiveModal } from '@/components/GoLiveModal';
+import { StealthSetupModal } from '@/components/StealthSetupModal';
+import { ViewStealthAddressModal } from '@/components/ViewStealthAddressModal';
 import { SEED_ROOMS, getCategoryStats, type LiveRoom } from '@/lib/data/seed-rooms';
 import type { StealthIdentity } from '@/lib/types/stealth';
 import { generateStealthAddress } from '@/lib/crypto/stealth';
 import { sendEthTransaction, waitForTransactionReceipt } from '@/lib/blockchain/transactions';
 import { getENSVerification, storeENSVerification } from '@/lib/storage/ens-store';
 import type { CategoryItem } from '@/components/ui/CategoryCard';
+import {
+  checkReceivingStatus,
+  type ReceivingStatus,
+} from '@/lib/stealth/receiving';
 
 const SIDEBAR_KEY = 'stellarcast-sidebar-collapsed';
 const ENTRY_PRICE_ETH = '0.001';
 
 export default function Home() {
   const metamask = useMetaMask();
+  const previousAddressRef = useRef<string | null>(null);
 
-  // Host stealth meta-address (from wallet connect identity) for Go Live receiving setup
+  const [identity, setIdentity] = useState<StealthIdentity | null>(null);
   const [metaAddress, setMetaAddress] = useState<string>('');
   const [verifiedEnsName, setVerifiedEnsName] = useState<string>('');
   const [needsWalletConnect, setNeedsWalletConnect] = useState(false);
+  const [receivingStatus, setReceivingStatus] = useState<ReceivingStatus>('idle');
+  const [receivingMessage, setReceivingMessage] = useState('');
+  const [stealthSetupOpen, setStealthSetupOpen] = useState(false);
+  const [viewStealthOpen, setViewStealthOpen] = useState(false);
+  const [pendingGoLive, setPendingGoLive] = useState(false);
 
   const [selectedRoom, setSelectedRoom] = useState<LiveRoom | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -44,6 +55,24 @@ export default function Home() {
 
   const featuredRoom = SEED_ROOMS.find((r) => r.isFeatured) || SEED_ROOMS[0];
 
+  const clearSessionForAccountChange = () => {
+    setIdentity(null);
+    setMetaAddress('');
+    setVerifiedEnsName('');
+    setReceivingStatus('idle');
+    setReceivingMessage('');
+    setStealthSetupOpen(false);
+    setViewStealthOpen(false);
+    setPendingGoLive(false);
+    setGoLiveModalOpen(false);
+    setPaymentModalOpen(false);
+    setSelectedRoom(null);
+    setActiveRoom(null);
+    setInboxOpen(false);
+    // Keep inboxMessages — they are local credentials; clearing is safer on account switch
+    setInboxMessages([]);
+  };
+
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem(SIDEBAR_KEY);
@@ -53,17 +82,48 @@ export default function Home() {
     }
   }, []);
 
+  // Reset app session when MetaMask account changes or disconnects
+  useEffect(() => {
+    const next = metamask.address?.toLowerCase() || null;
+    const prev = previousAddressRef.current;
+
+    if (prev && next && prev !== next) {
+      clearSessionForAccountChange();
+      setNeedsWalletConnect(true);
+    } else if (prev && !next) {
+      clearSessionForAccountChange();
+      setNeedsWalletConnect(false);
+    }
+
+    previousAddressRef.current = next;
+  }, [metamask.address]);
+
   useEffect(() => {
     const checkExistingENS = async () => {
       if (metamask.isConnected && metamask.address) {
         const existing = await getENSVerification(metamask.address);
         if (existing) {
           setVerifiedEnsName(existing.ensName);
+        } else {
+          setVerifiedEnsName('');
         }
+      } else {
+        setVerifiedEnsName('');
       }
     };
     checkExistingENS();
   }, [metamask.isConnected, metamask.address]);
+
+  const refreshReceivingStatus = async (wallet: string, userIdentity: StealthIdentity) => {
+    setReceivingStatus('checking');
+    const result = await checkReceivingStatus(wallet, userIdentity);
+    setReceivingStatus(result.status);
+    setReceivingMessage(result.message || '');
+    if (result.localMetaEncoded) {
+      setMetaAddress(result.localMetaEncoded);
+    }
+    return result;
+  };
 
   const filteredRooms = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -94,14 +154,33 @@ export default function Home() {
     });
   };
 
-  const handleIdentityReady = (_userIdentity: StealthIdentity, userMetaAddress: string, ensName?: string) => {
+  const handleIdentityReady = async (
+    userIdentity: StealthIdentity,
+    userMetaAddress: string,
+    ensName?: string
+  ) => {
+    setIdentity(userIdentity);
     setMetaAddress(userMetaAddress);
     if (ensName) {
       setVerifiedEnsName(ensName);
     }
     setNeedsWalletConnect(false);
 
-    // If user connected because they selected a room, continue to payment
+    if (metamask.address) {
+      const result = await refreshReceivingStatus(metamask.address, userIdentity);
+      // Soft prompt for hosts who need setup — don't block viewers
+      if (result.status === 'needs-setup' || result.status === 'keys-mismatch') {
+        // Only auto-open setup if they were trying to go live
+        if (pendingGoLive) {
+          setStealthSetupOpen(true);
+        }
+      } else if (result.status === 'ready' && pendingGoLive) {
+        setPendingGoLive(false);
+        setGoLiveModalOpen(true);
+      }
+    }
+
+    // Viewer path: continue to payment after connect
     if (selectedRoom) {
       setPaymentModalOpen(true);
     }
@@ -125,6 +204,41 @@ export default function Home() {
     setNeedsWalletConnect(true);
   };
 
+  const handleSwitchAccount = async () => {
+    const ok = await metamask.switchAccount();
+    // Session reset + re-auth are handled by the address-change effect
+    if (!ok && metamask.address) {
+      // User cancelled — stay on current account
+      return;
+    }
+  };
+
+  const handleDisconnect = async () => {
+    await metamask.disconnect();
+    clearSessionForAccountChange();
+    setNeedsWalletConnect(false);
+  };
+
+  const handleSetupReceiving = () => {
+    if (!metamask.isConnected || !identity) {
+      setNeedsWalletConnect(true);
+      return;
+    }
+    setStealthSetupOpen(true);
+  };
+
+  const handleViewStealthAddress = () => {
+    if (!metamask.isConnected) {
+      setNeedsWalletConnect(true);
+      return;
+    }
+    if (!identity || !metaAddress) {
+      setNeedsWalletConnect(true);
+      return;
+    }
+    setViewStealthOpen(true);
+  };
+
   const handleRoomSelect = (room: LiveRoom) => {
     if (!metamask.isConnected) {
       setNeedsWalletConnect(true);
@@ -132,7 +246,7 @@ export default function Home() {
       return;
     }
 
-    // Viewer flow: wallet address is enough — skip ENS modal, go to payment
+    // Viewer flow: wallet address is enough — no stealth registration required
     setSelectedRoom(room);
     setPaymentModalOpen(true);
   };
@@ -153,8 +267,13 @@ export default function Home() {
       hostMeta = null;
     }
 
+    // Seed/demo rooms may not be registered on-chain — fall back for those only
     if (!hostMeta) {
-      hostMeta = getDemoHostMetaAddress(selectedRoom.host);
+      if (selectedRoom.isDemoSeed) {
+        hostMeta = getDemoHostMetaAddress(selectedRoom.host);
+      } else {
+        throw new Error('This host has not registered a stealth receiving address yet.');
+      }
     }
 
     const stealthPayment = generateStealthAddress(hostMeta);
@@ -211,12 +330,35 @@ export default function Home() {
   };
 
   const handleGoLive = () => {
-    if (!metamask.isConnected) {
+    if (!metamask.isConnected || !identity) {
+      setPendingGoLive(true);
       setNeedsWalletConnect(true);
       return;
     }
-    // Go Live modal handles ENS verification + stealth setup
+
+    if (receivingStatus !== 'ready') {
+      setPendingGoLive(true);
+      setStealthSetupOpen(true);
+      return;
+    }
+
     setGoLiveModalOpen(true);
+  };
+
+  const handleStealthRegistered = async (encoded: string) => {
+    setMetaAddress(encoded);
+    setReceivingStatus('ready');
+    setReceivingMessage('Receiving ready — viewers can pay your stealth meta-address.');
+
+    if (metamask.address && identity) {
+      await refreshReceivingStatus(metamask.address, identity);
+    }
+
+    if (pendingGoLive) {
+      setPendingGoLive(false);
+      setStealthSetupOpen(false);
+      setGoLiveModalOpen(true);
+    }
   };
 
   const handleStartStream = (title: string, category: string) => {
@@ -269,10 +411,16 @@ export default function Home() {
         address={metamask.address}
         verifiedEnsName={verifiedEnsName}
         unreadCount={unreadCount}
+        receivingStatus={receivingStatus}
+        isSwitchingAccount={metamask.isSwitching}
         onConnect={handleConnectClick}
         onGoLive={handleGoLive}
         onInboxToggle={() => setInboxOpen((v) => !v)}
         onBrowse={clearFilters}
+        onSetupReceiving={handleSetupReceiving}
+        onViewStealthAddress={handleViewStealthAddress}
+        onSwitchAccount={handleSwitchAccount}
+        onDisconnect={handleDisconnect}
         inboxOpen={inboxOpen}
       >
         {showFeatured && <FeaturedCarousel room={featuredRoom} onJoin={handleRoomSelect} />}
@@ -335,7 +483,35 @@ export default function Home() {
         onEnsVerified={handleHostEnsVerified}
       />
 
-      {needsWalletConnect && <WalletConnect onIdentityReady={handleIdentityReady} />}
+      <StealthSetupModal
+        isOpen={stealthSetupOpen}
+        walletAddress={metamask.address || ''}
+        identity={identity}
+        metaAddress={metaAddress}
+        initialStatus={receivingStatus === 'keys-mismatch' ? 'keys-mismatch' : 'needs-setup'}
+        statusMessage={receivingMessage}
+        onClose={() => {
+          setStealthSetupOpen(false);
+          setPendingGoLive(false);
+        }}
+        onRegistered={handleStealthRegistered}
+      />
+
+      <ViewStealthAddressModal
+        isOpen={viewStealthOpen}
+        metaAddress={metaAddress}
+        walletAddress={metamask.address || ''}
+        receivingStatus={receivingStatus}
+        onClose={() => setViewStealthOpen(false)}
+        onSetupReceiving={handleSetupReceiving}
+      />
+
+      {needsWalletConnect && (
+        <WalletConnect
+          onIdentityReady={handleIdentityReady}
+          onDismiss={() => setNeedsWalletConnect(false)}
+        />
+      )}
     </NetworkGuard>
   );
 }

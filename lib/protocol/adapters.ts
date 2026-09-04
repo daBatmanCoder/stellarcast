@@ -9,6 +9,7 @@ export interface ProtocolAdapter {
   mode: 'mock' | 'live';
   resolveENS(name: string): Promise<string | null>;
   getMetaAddress(address: string): Promise<StealthMetaAddress | null>;
+  registerStealthMetaAddress(from: string, meta: StealthMetaAddress): Promise<string>;
   publishAnnouncement(
     schemeId: bigint,
     stealthAddress: string,
@@ -41,8 +42,15 @@ export class MockProtocolAdapter implements ProtocolAdapter {
     return this.mockRegistry.get(address.toLowerCase()) || null;
   }
 
+  /** Sync helper used by older demo code */
   registerMetaAddress(address: string, meta: StealthMetaAddress): void {
     this.mockRegistry.set(address.toLowerCase(), meta);
+  }
+
+  async registerStealthMetaAddress(from: string, meta: StealthMetaAddress): Promise<string> {
+    this.mockRegistry.set(from.toLowerCase(), meta);
+    const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+    return '0x' + Array.from(randomBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 
   async publishAnnouncement(
@@ -53,8 +61,9 @@ export class MockProtocolAdapter implements ProtocolAdapter {
     viewTag: number
   ): Promise<string> {
     const randomBytes = crypto.getRandomValues(new Uint8Array(32));
-    const txHash = '0x' + Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-    
+    const txHash =
+      '0x' + Array.from(randomBytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+
     const announcement: Announcement = {
       schemeId,
       stealthAddress,
@@ -80,7 +89,6 @@ export class MockProtocolAdapter implements ProtocolAdapter {
 
 /**
  * Live adapter for actual blockchain
- * Requires ERC-6538 registry and ERC-5564 announcer contracts
  */
 export class LiveProtocolAdapter implements ProtocolAdapter {
   mode: 'live' = 'live';
@@ -91,27 +99,40 @@ export class LiveProtocolAdapter implements ProtocolAdapter {
     private announcerAddress: string
   ) {}
 
-  async resolveENS(name: string): Promise<string | null> {
-    // ENS resolution requires mainnet or ENS-supporting chains
-    // This would need a full ENS resolver implementation
-    // For now, users must provide Ethereum addresses directly
-    console.warn('ENS resolution not implemented - provide Ethereum addresses directly');
+  async resolveENS(_name: string): Promise<string | null> {
+    console.warn('ENS resolution not implemented on live adapter — use Sepolia ENS resolver helpers');
     return null;
   }
 
   async getMetaAddress(address: string): Promise<StealthMetaAddress | null> {
     const { checkRegistryDeployed, readMetaAddress } = await import('../blockchain/contracts');
-    
+
     const isDeployed = await checkRegistryDeployed(this.registryAddress);
     if (!isDeployed) {
       throw new Error(
         `ERC-6538 registry not deployed at ${this.registryAddress} on chain ${this.chainId}. ` +
-        'Cannot read meta-addresses without deployed contract. ' +
-        'Use mock mode for testing without contracts.'
+          'Cannot read meta-addresses without deployed contract. ' +
+          'Use mock mode for testing without contracts.'
       );
     }
 
     return await readMetaAddress(this.registryAddress, address, BigInt(1));
+  }
+
+  async registerStealthMetaAddress(from: string, meta: StealthMetaAddress): Promise<string> {
+    const { checkRegistryDeployed, registerMetaAddress } = await import('../blockchain/contracts');
+    const { waitForTransactionReceipt } = await import('../blockchain/transactions');
+
+    const isDeployed = await checkRegistryDeployed(this.registryAddress);
+    if (!isDeployed) {
+      throw new Error(
+        `ERC-6538 registry not deployed at ${this.registryAddress} on chain ${this.chainId}.`
+      );
+    }
+
+    const txHash = await registerMetaAddress(this.registryAddress, from, meta, BigInt(1));
+    await waitForTransactionReceipt(txHash);
+    return txHash;
   }
 
   async publishAnnouncement(
@@ -119,27 +140,26 @@ export class LiveProtocolAdapter implements ProtocolAdapter {
     stealthAddress: string,
     ephemeralPublicKey: string,
     metadata: string,
-    viewTag: number
+    _viewTag: number
   ): Promise<string> {
     const { checkAnnouncerDeployed, publishAnnouncement } = await import('../blockchain/contracts');
-    
+
     const isDeployed = await checkAnnouncerDeployed(this.announcerAddress);
     if (!isDeployed) {
       throw new Error(
         `ERC-5564 announcer not deployed at ${this.announcerAddress} on chain ${this.chainId}. ` +
-        'Cannot publish announcements without deployed contract. ' +
-        'Use mock mode for testing without contracts.'
+          'Cannot publish announcements without deployed contract. ' +
+          'Use mock mode for testing without contracts.'
       );
     }
 
-    // Get connected wallet address
     if (typeof window === 'undefined' || !window.ethereum) {
       throw new Error('MetaMask not available');
     }
 
-    const accounts = await window.ethereum.request({
+    const accounts = (await window.ethereum.request({
       method: 'eth_accounts',
-    }) as string[];
+    })) as string[];
 
     if (!accounts || accounts.length === 0) {
       throw new Error('No wallet connected. Please connect MetaMask.');
@@ -157,25 +177,25 @@ export class LiveProtocolAdapter implements ProtocolAdapter {
 
   async scanAnnouncements(fromBlock?: number): Promise<Announcement[]> {
     const { checkAnnouncerDeployed, scanAnnouncements } = await import('../blockchain/contracts');
-    
+
     const isDeployed = await checkAnnouncerDeployed(this.announcerAddress);
     if (!isDeployed) {
       throw new Error(
         `ERC-5564 announcer not deployed at ${this.announcerAddress} on chain ${this.chainId}. ` +
-        'Cannot scan announcements without deployed contract.'
+          'Cannot scan announcements without deployed contract.'
       );
     }
 
     const events = await scanAnnouncements(this.announcerAddress, fromBlock || 0);
-    
-    return events.map(event => ({
+
+    return events.map((event) => ({
       schemeId: BigInt(event.schemeId),
       stealthAddress: event.stealthAddress,
       ephemeralPublicKey: event.ephemeralPublicKey,
       metadata: event.metadata,
-      viewTag: 0, // Would need to parse from metadata
+      viewTag: 0,
       txHash: event.txHash,
-      timestamp: Date.now(), // Would need to get from block
+      timestamp: Date.now(),
     }));
   }
 }

@@ -1,65 +1,83 @@
 /**
  * ERC-6538 and ERC-5564 contract interactions
- * Minimal ABI encoding for meta-address registry and announcer
  */
 
+import {
+  encodeFunctionData,
+  decodeFunctionResult,
+  parseAbi,
+  type Hex,
+} from 'viem';
 import { callContract, sendContractTransaction, getLogs, verifyContractDeployed } from './transactions';
 import { StealthMetaAddress } from '../types/stealth';
 
 /**
  * Known ERC-6538 registry and ERC-5564 announcer contract addresses per chain
- * Canonical CREATE2 addresses verified via eth_getCode on public RPCs
- * 
  * PRODUCTION: Sepolia only (chain ID 11155111)
- * Other chains listed for reference but not supported in product UX
  */
 export const KNOWN_CONTRACTS: Record<number, { registry?: string; announcer?: string }> = {
-  // Sepolia Testnet - PRIMARY SUPPORTED CHAIN
-  // VERIFIED via gateway.tenderly.co/public/sepolia
-  // Registry bytecode: 6296 chars, Announcer bytecode: 1420 chars
   11155111: {
     registry: '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
     announcer: '0x55649E01B5Df198D18D95b5cc5051630cfD45564',
   },
-  
-  // Reference only - not supported in production UX
-  // Ethereum Mainnet (contracts exist but app is Sepolia-only)
   1: {
     registry: '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
     announcer: '0x55649E01B5Df198D18D95b5cc5051630cfD45564',
   },
-  // Holesky Testnet (verified but not in product flow)
   17000: {
     registry: '0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538',
     announcer: '0x55649E01B5Df198D18D95b5cc5051630cfD45564',
   },
 };
 
-/**
- * Primary supported chain for production
- */
 export const SEPOLIA_CHAIN_ID = 11155111;
 
-/**
- * Check if chain is supported in production UX
- */
 export function isSupportedChain(chainId: number): boolean {
   return chainId === SEPOLIA_CHAIN_ID;
 }
 
-/**
- * ERC-6538: stealthMetaAddressOf(address,uint256) selector
- */
-const STEALTH_META_ADDRESS_OF_SELECTOR = '0x' + 'a90261a0'.padEnd(8, '0'); // First 4 bytes of keccak256
+const REGISTRY_ABI = parseAbi([
+  'function registerKeys(uint256 schemeId, bytes stealthMetaAddress)',
+  'function stealthMetaAddressOf(address registrant, uint256 schemeId) view returns (bytes)',
+]);
 
-/**
- * ERC-5564: announce(uint256,address,bytes,bytes) selector
- */
-const ANNOUNCE_SELECTOR = '0x' + '4f0e0ef3'.padEnd(8, '0');
+const ANNOUNCE_SELECTOR = '0x4f0e0ef3';
 
-/**
- * Check if registry contract exists on current chain
- */
+/** Scheme 1 meta-address bytes = compressed spend pubkey (33) || compressed view pubkey (33) */
+export function metaAddressToBytes(meta: StealthMetaAddress): Hex {
+  const spend = Buffer.from(meta.spendingPublicKey).toString('hex');
+  const view = Buffer.from(meta.viewingPublicKey).toString('hex');
+  return `0x${spend}${view}` as Hex;
+}
+
+export function bytesToMetaAddress(hex: string): StealthMetaAddress | null {
+  const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+  // 33+33 bytes = 132 hex chars; some registries may include scheme prefix byte
+  if (clean.length === 132) {
+    return {
+      spendingPublicKey: Buffer.from(clean.slice(0, 66), 'hex'),
+      viewingPublicKey: Buffer.from(clean.slice(66), 'hex'),
+      scheme: 1,
+    };
+  }
+  if (clean.length === 134 && clean.startsWith('01')) {
+    return {
+      spendingPublicKey: Buffer.from(clean.slice(2, 68), 'hex'),
+      viewingPublicKey: Buffer.from(clean.slice(68), 'hex'),
+      scheme: 1,
+    };
+  }
+  return null;
+}
+
+export function publicKeysMatch(a: StealthMetaAddress, b: StealthMetaAddress): boolean {
+  const spendA = Buffer.from(a.spendingPublicKey).toString('hex');
+  const spendB = Buffer.from(b.spendingPublicKey).toString('hex');
+  const viewA = Buffer.from(a.viewingPublicKey).toString('hex');
+  const viewB = Buffer.from(b.viewingPublicKey).toString('hex');
+  return spendA === spendB && viewA === viewB;
+}
+
 export async function checkRegistryDeployed(registryAddress: string): Promise<boolean> {
   try {
     return await verifyContractDeployed(registryAddress);
@@ -68,9 +86,6 @@ export async function checkRegistryDeployed(registryAddress: string): Promise<bo
   }
 }
 
-/**
- * Check if announcer contract exists on current chain
- */
 export async function checkAnnouncerDeployed(announcerAddress: string): Promise<boolean> {
   try {
     return await verifyContractDeployed(announcerAddress);
@@ -81,7 +96,7 @@ export async function checkAnnouncerDeployed(announcerAddress: string): Promise<
 
 /**
  * Read stealth meta-address from ERC-6538 registry
- * Returns null if not registered
+ * Returns null if not registered / empty
  */
 export async function readMetaAddress(
   registryAddress: string,
@@ -89,36 +104,28 @@ export async function readMetaAddress(
   schemeId: bigint = BigInt(1)
 ): Promise<StealthMetaAddress | null> {
   try {
-    // Encode call: stealthMetaAddressOf(address,uint256)
-    const addressParam = userAddress.toLowerCase().slice(2).padStart(64, '0');
-    const schemeParam = schemeId.toString(16).padStart(64, '0');
-    const data = STEALTH_META_ADDRESS_OF_SELECTOR + addressParam + schemeParam;
+    const data = encodeFunctionData({
+      abi: REGISTRY_ABI,
+      functionName: 'stealthMetaAddressOf',
+      args: [userAddress as `0x${string}`, schemeId],
+    });
 
     const result = await callContract(registryAddress, data);
-
-    // Decode result: (bytes) containing spending and viewing public keys
-    if (result === '0x' || result.length < 66) {
+    if (!result || result === '0x' || result.length < 10) {
       return null;
     }
 
-    // Parse returned bytes (simplified - assumes fixed 66-byte keys)
-    // Real ABI decoding would parse dynamic bytes properly
-    const hexData = result.slice(2);
-    
-    // Skip ABI offset/length headers, get to actual data
-    // For now, return null if not a simple format
-    if (hexData.length < 132) {
+    const decoded = decodeFunctionResult({
+      abi: REGISTRY_ABI,
+      functionName: 'stealthMetaAddressOf',
+      data: result as Hex,
+    }) as Hex;
+
+    if (!decoded || decoded === '0x' || decoded.length <= 2) {
       return null;
     }
 
-    const spendingPublicKey = Buffer.from(hexData.slice(0, 66), 'hex');
-    const viewingPublicKey = Buffer.from(hexData.slice(66, 132), 'hex');
-
-    return {
-      spendingPublicKey,
-      viewingPublicKey,
-      scheme: 1,
-    };
+    return bytesToMetaAddress(decoded);
   } catch (error) {
     console.error('Failed to read meta-address:', error);
     return null;
@@ -126,8 +133,26 @@ export async function readMetaAddress(
 }
 
 /**
+ * Register stealth meta-address on ERC-6538 registry via MetaMask
+ */
+export async function registerMetaAddress(
+  registryAddress: string,
+  from: string,
+  meta: StealthMetaAddress,
+  schemeId: bigint = BigInt(1)
+): Promise<string> {
+  const stealthMetaBytes = metaAddressToBytes(meta);
+  const data = encodeFunctionData({
+    abi: REGISTRY_ABI,
+    functionName: 'registerKeys',
+    args: [schemeId, stealthMetaBytes],
+  });
+
+  return await sendContractTransaction(from, registryAddress, data);
+}
+
+/**
  * Publish announcement to ERC-5564 announcer
- * Returns transaction hash
  */
 export async function publishAnnouncement(
   announcerAddress: string,
@@ -138,27 +163,31 @@ export async function publishAnnouncement(
   metadata: string
 ): Promise<string> {
   try {
-    // Encode call: announce(uint256 schemeId, address stealthAddress, bytes ephemeralPublicKey, bytes metadata)
     const schemeParam = schemeId.toString(16).padStart(64, '0');
     const addressParam = stealthAddress.toLowerCase().slice(2).padStart(64, '0');
-    
-    // For bytes parameters, need offset + length + data
-    // This is simplified ABI encoding - production would use a proper library
+
     const ephemBytes = ephemeralPublicKey.slice(2);
     const metaBytes = metadata.slice(2);
-    
-    // Calculate offsets
-    const offset1 = (4 * 32).toString(16).padStart(64, '0'); // offset to ephemeral
-    const offset2 = ((4 + 1 + Math.ceil(ephemBytes.length / 2 / 32)) * 32).toString(16).padStart(64, '0'); // offset to metadata
-    
+
+    const offset1 = (4 * 32).toString(16).padStart(64, '0');
+    const offset2 = ((4 + 1 + Math.ceil(ephemBytes.length / 2 / 32)) * 32).toString(16).padStart(64, '0');
+
     const ephemLength = (ephemBytes.length / 2).toString(16).padStart(64, '0');
     const ephemData = ephemBytes.padEnd(Math.ceil(ephemBytes.length / 64) * 64, '0');
-    
+
     const metaLength = (metaBytes.length / 2).toString(16).padStart(64, '0');
     const metaData = metaBytes.padEnd(Math.ceil(metaBytes.length / 64) * 64, '0');
-    
-    const data = ANNOUNCE_SELECTOR + schemeParam + addressParam + offset1 + offset2 + 
-                 ephemLength + ephemData + metaLength + metaData;
+
+    const data =
+      ANNOUNCE_SELECTOR +
+      schemeParam +
+      addressParam +
+      offset1 +
+      offset2 +
+      ephemLength +
+      ephemData +
+      metaLength +
+      metaData;
 
     return await sendContractTransaction(from, announcerAddress, data);
   } catch (error) {
@@ -169,25 +198,20 @@ export async function publishAnnouncement(
   }
 }
 
-/**
- * Scan for announcement events from ERC-5564 announcer
- */
 export async function scanAnnouncements(
   announcerAddress: string,
   fromBlock: number = 0
-): Promise<Array<{
-  schemeId: string;
-  stealthAddress: string;
-  ephemeralPublicKey: string;
-  metadata: string;
-  txHash: string;
-  blockNumber: string;
-}>> {
+): Promise<
+  Array<{
+    schemeId: string;
+    stealthAddress: string;
+    ephemeralPublicKey: string;
+    metadata: string;
+    txHash: string;
+    blockNumber: string;
+  }>
+> {
   try {
-    // Event signature: Announcement(uint256,address,bytes,bytes)
-    // keccak256 of signature as topic[0]
-    const eventTopic = '0x' + 'ec3c2d6c9e1c7e4e1efbeaef5ef15e5f3c5f1a1e9f0f8c4f0a0c1b2d3e4f5a6b'; // placeholder
-    
     const fromBlockHex = '0x' + fromBlock.toString(16);
     const logs = await getLogs(announcerAddress, fromBlockHex, 'latest');
 
@@ -205,9 +229,6 @@ export async function scanAnnouncements(
   }
 }
 
-/**
- * Get recommended contracts for current chain
- */
 export function getContractAddresses(chainId: number): {
   registry: string | null;
   announcer: string | null;
