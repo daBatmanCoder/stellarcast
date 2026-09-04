@@ -23,7 +23,7 @@ export async function deriveRoomPassword(sharedSecret: Uint8Array): Promise<Cryp
   // Use HKDF to derive a key from the shared secret
   const baseKey = await crypto.subtle.importKey(
     'raw',
-    sharedSecret,
+    sharedSecret as BufferSource,
     { name: 'HKDF' },
     false,
     ['deriveKey']

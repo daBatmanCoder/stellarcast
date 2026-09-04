@@ -113,7 +113,6 @@ export function FeaturedCarousel({ room, onJoin }: FeaturedCarouselProps) {
 
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0, lineHeight: 1.45, flex: 1 }}>
             Pay with a stealth address to unlock private livestream access on Sepolia.
-            {room.isDemoSeed ? ' Demo room for presentation.' : ''}
           </p>
 
           <Button variant="primary" fullWidth onClick={() => onJoin(room)}>
