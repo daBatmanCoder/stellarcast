@@ -10,16 +10,14 @@ import type { LiveRoom } from '@/lib/storage/rooms-store';
 /**
  * Deployed StellaCast Rooms contract address on Sepolia
  * 
- * DEPLOYMENT STATUS: NOT YET DEPLOYED
+ * DEPLOYMENT STATUS: DEPLOYED ✅
  * 
- * To deploy:
- * 1. See contracts/DEPLOY.md for deployment instructions
- * 2. Update this address after deployment
- * 3. Test with createRoomOnChain() and getAllRooms()
- * 
- * For local testing, you can deploy via Remix to Sepolia and paste address here.
+ * Contract: 0x4D34702b7967272adba2A361766cC461CF72f60a
+ * Deploy Tx: 0xee0266d005020adb19d4b54a88ece95a0f67439c6a0c6810bd70cfcfa342097f
+ * Deployer: 0xD0a2b03fCCAD184B9eec286FeFA34301E9436206
+ * Etherscan: https://sepolia.etherscan.io/address/0x4D34702b7967272adba2A361766cC461CF72f60a
  */
-export const ROOM_CONTRACT_ADDRESS = '0x0000000000000000000000000000000000000000';
+export const ROOM_CONTRACT_ADDRESS = '0x4D34702b7967272adba2A361766cC461CF72f60a';
 
 const ROOMS_ABI = parseAbi([
   'function createRoom(string hostEns, string title, string category, string tags, string stealthMetaAddress, string thumbnail, uint256 entryPrice, bytes encryptedAccessData) returns (uint256)',

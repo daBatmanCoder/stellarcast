@@ -34,7 +34,8 @@
  * Deployed addresses will be documented in DEPLOYMENT.md
  */
 
-// Placeholder - replace with actual deployed address after deployment
-export const SEPOLIA_ROOMS_CONTRACT_ADDRESS = '0x0000000000000000000000000000000000000000';
+// ✅ DEPLOYED TO SEPOLIA
+export const SEPOLIA_ROOMS_CONTRACT_ADDRESS = '0x4D34702b7967272adba2A361766cC461CF72f60a';
 
-// TODO: After deployment, update this address and commit it
+// Deploy Tx: 0xee0266d005020adb19d4b54a88ece95a0f67439c6a0c6810bd70cfcfa342097f
+// Etherscan: https://sepolia.etherscan.io/address/0x4D34702b7967272adba2A361766cC461CF72f60a

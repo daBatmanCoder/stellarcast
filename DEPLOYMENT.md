@@ -75,14 +75,17 @@ Coming soon - for production deployments with CI/CD
 
 ## Current Status
 
-**CONTRACT NOT YET DEPLOYED**
+**✅ CONTRACT DEPLOYED TO SEPOLIA**
 
-The contract code is complete in `/contracts/StellaCastRooms.sol`.
-To deploy:
-1. Follow Remix instructions above
-2. Update `ROOM_CONTRACT_ADDRESS` 
-3. Commit the address update
-4. Test Go Live → Browse flow
+- **Contract Address**: `0x4D34702b7967272adba2A361766cC461CF72f60a`
+- **Deploy Transaction**: `0xee0266d005020adb19d4b54a88ece95a0f67439c6a0c6810bd70cfcfa342097f`
+- **Deployer**: `0xD0a2b03fCCAD184B9eec286FeFA34301E9436206`
+- **Etherscan**: https://sepolia.etherscan.io/address/0x4D34702b7967272adba2A361766cC461CF72f60a
+
+The contract is live and ready to use. You can now:
+1. Go Live to mint room NFTs
+2. Browse will show created rooms
+3. Test the full flow end-to-end
 
 ## Contract ABI
 
