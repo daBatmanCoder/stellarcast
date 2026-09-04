@@ -229,3 +229,85 @@ export class ENSCache {
 
 // Global ENS cache instance
 export const ensCache = new ENSCache();
+
+/**
+ * Read ENS text record on Sepolia
+ */
+export async function getSepoliaTextRecord(name: string, key: string): Promise<string | null> {
+  if (!name || !name.includes('.eth')) {
+    return null;
+  }
+
+  try {
+    const normalized = normalizeEnsName(name);
+    
+    // Use viem's built-in ENS text record resolution for Sepolia
+    const textRecord = await sepoliaClient.getEnsText({
+      name: normalized,
+      key: key
+    });
+
+    return textRecord || null;
+  } catch (error) {
+    console.error(`Failed to read Sepolia ENS text record ${key}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Read ENS text record on mainnet
+ */
+export async function getMainnetTextRecord(name: string, key: string): Promise<string | null> {
+  if (!name || !name.includes('.eth')) {
+    return null;
+  }
+
+  try {
+    const normalized = normalizeEnsName(name);
+    
+    // Use viem's built-in ENS text record resolution for mainnet
+    const textRecord = await mainnetClient.getEnsText({
+      name: normalized,
+      key: key
+    });
+
+    return textRecord || null;
+  } catch (error) {
+    console.error(`Failed to read mainnet ENS text record ${key}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Find all stealth-meta-address slots for an ENS name on Sepolia
+ * Returns array of { slot: number, value: string } for each occupied slot
+ */
+export async function getStealthMetaSlots(ensName: string): Promise<Array<{ slot: number; value: string }>> {
+  const slots: Array<{ slot: number; value: string }> = [];
+  
+  // Check slots 1-10 (reasonable limit)
+  for (let i = 1; i <= 10; i++) {
+    const key = `stealth-meta-address[${i}]`;
+    const value = await getSepoliaTextRecord(ensName, key);
+    if (value) {
+      slots.push({ slot: i, value });
+    } else {
+      // Stop at first empty slot for efficiency
+      break;
+    }
+  }
+  
+  return slots;
+}
+
+/**
+ * Find the next available stealth-meta-address slot for an ENS name
+ * Returns slot number (1 if none exist, otherwise next free slot)
+ */
+export async function getNextStealthMetaSlot(ensName: string): Promise<number> {
+  const slots = await getStealthMetaSlots(ensName);
+  if (slots.length === 0) {
+    return 1;
+  }
+  return slots[slots.length - 1].slot + 1;
+}
