@@ -63,7 +63,34 @@ export function PaymentModal({
         }, 1500);
       }, 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Payment failed');
+      let errorMessage = 'Payment failed';
+      
+      if (err instanceof Error) {
+        const msg = err.message.toLowerCase();
+        
+        // Rate limiting
+        if (msg.includes('rate limit') || msg.includes('429') || msg.includes('too many requests')) {
+          errorMessage = 'Sepolia is busy — wait a few seconds and try again';
+        }
+        // User rejected
+        else if (msg.includes('user rejected') || msg.includes('user denied')) {
+          errorMessage = 'Transaction cancelled';
+        }
+        // Insufficient funds
+        else if (msg.includes('insufficient') || msg.includes('funds')) {
+          errorMessage = 'Insufficient funds. You need ETH on Sepolia testnet';
+        }
+        // Network issues
+        else if (msg.includes('network') || msg.includes('connection')) {
+          errorMessage = 'Network error. Check your connection and try again';
+        }
+        // Generic
+        else {
+          errorMessage = err.message;
+        }
+      }
+      
+      setError(errorMessage);
       setStatus('error');
     }
   };
@@ -127,14 +154,14 @@ export function PaymentModal({
           color: '#FFFFFF',
           marginBottom: '8px'
         }}>
-          Unlock stream
+          {status === 'success' ? 'Payment Sent!' : 'Unlock stream'}
         </h2>
         <p style={{ 
           fontSize: '14px', 
           lineHeight: '20px',
           color: 'rgba(255, 255, 255, 0.64)'
         }}>
-          Private payment via stealth address
+          {status === 'success' ? 'Check your inbox for access' : 'Private payment via stealth address'}
         </p>
       </div>
 
@@ -169,16 +196,51 @@ export function PaymentModal({
               </div>
             </div>
 
+            {/* How stealth works */}
+            <div style={{
+              padding: '14px',
+              borderRadius: '12px',
+              backgroundColor: 'rgba(124, 92, 255, 0.08)',
+              border: '1px solid rgba(124, 92, 255, 0.16)',
+              marginBottom: '16px'
+            }}>
+              <div style={{ 
+                fontSize: '12px', 
+                fontWeight: 600, 
+                color: '#7C5CFF',
+                marginBottom: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                <span style={{ fontSize: '14px' }}>🔒</span>
+                How stealth payments work
+              </div>
+              <div style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.64)' }}>
+                <div style={{ marginBottom: '6px' }}>
+                  1. Your wallet resolves host's ENS → meta-address
+                </div>
+                <div style={{ marginBottom: '6px' }}>
+                  2. Generates unique stealth address from meta-address
+                </div>
+                <div style={{ marginBottom: '6px' }}>
+                  3. Payment goes to stealth address (private, one-time)
+                </div>
+                <div>
+                  4. Only host can detect & claim funds (ERC-5564)
+                </div>
+              </div>
+            </div>
+
             <div style={{
               padding: '12px',
               borderRadius: '12px',
-              backgroundColor: 'rgba(124, 92, 255, 0.08)',
-              marginBottom: '16px'
+              backgroundColor: 'rgba(0, 245, 147, 0.08)',
+              border: '1px solid rgba(0, 245, 147, 0.16)'
             }}>
-              <div style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.56)' }}>
-                <div>• Payment sent to stealth address (ERC-5564)</div>
-                <div>• Room password delivered to your Inbox</div>
-                <div>• Private & non-custodial</div>
+              <div style={{ fontSize: '12px', lineHeight: '18px', color: 'rgba(255, 255, 255, 0.64)' }}>
+                ✓ Room password delivered to your Inbox<br />
+                ✓ Private, non-custodial, no middleman
               </div>
             </div>
           </>

@@ -64,7 +64,7 @@ export function FeaturedCarousel({ room, onJoin }: FeaturedCarouselProps) {
         </div>
 
         {/* Info panel */}
-        <div className="col-span-4">
+        <div>
           <div
             className="h-full rounded-lg p-6 flex flex-col justify-between"
             style={{ backgroundColor: 'var(--surface)' }}

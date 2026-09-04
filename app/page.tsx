@@ -13,6 +13,7 @@ import { PaymentModal } from '@/components/PaymentModal';
 import { WalletConnect } from '@/components/WalletConnect';
 import { RoomView } from '@/components/RoomView';
 import { MobileDrawer } from '@/components/MobileDrawer';
+import { GoLiveModal } from '@/components/GoLiveModal';
 import { SEED_ROOMS, type LiveRoom } from '@/lib/data/seed-rooms';
 import type { StealthIdentity } from '@/lib/types/stealth';
 import { generateStealthAddress } from '@/lib/crypto/stealth';
@@ -37,6 +38,7 @@ export default function Home() {
   const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
   const [activeRoom, setActiveRoom] = useState<{ room: LiveRoom; credential: string } | null>(null);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [goLiveModalOpen, setGoLiveModalOpen] = useState(false);
   
   // Demo state
   const [currentEnsForPayment, setCurrentEnsForPayment] = useState('');
@@ -195,6 +197,37 @@ export default function Home() {
     setActiveRoom(null);
   };
 
+  const handleGoLive = () => {
+    // Check if connected and has identity
+    if (!metamask.isConnected) {
+      setNeedsWalletConnect(true);
+      return;
+    }
+    if (!identity) {
+      setNeedsWalletConnect(true);
+      return;
+    }
+    setGoLiveModalOpen(true);
+  };
+
+  const handleStartStream = (title: string, category: string) => {
+    // Create a host room and start streaming
+    const hostRoom: LiveRoom = {
+      id: `host-${Date.now()}`,
+      host: metamask.address || '',
+      hostDisplayName: verifiedEnsName || `Host ${metamask.address?.slice(0,6)}`,
+      title,
+      category,
+      viewers: 1,
+      tags: [category, 'Live'],
+      isFeatured: false,
+      isDemoSeed: false
+    };
+    
+    setGoLiveModalOpen(false);
+    setActiveRoom({ room: hostRoom, credential: 'host-stream' });
+  };
+
   return (
     <NetworkGuard>
       <div style={{ backgroundColor: 'var(--base)', minHeight: '100vh' }}>
@@ -205,6 +238,7 @@ export default function Home() {
           verifiedEnsName={verifiedEnsName}
           onConnect={handleConnectClick}
           onMenuToggle={() => setMobileDrawerOpen(true)}
+          onGoLive={() => setGoLiveModalOpen(true)}
         />
 
         {/* Left Rail - Desktop only */}
@@ -310,8 +344,17 @@ export default function Home() {
           />
         )}
 
+        {/* Go Live Modal */}
+        <GoLiveModal
+          isOpen={goLiveModalOpen}
+          ensName={verifiedEnsName}
+          metaAddress={metaAddress}
+          onClose={() => setGoLiveModalOpen(false)}
+          onStartStream={handleStartStream}
+        />
+
         {/* Wallet Connect Overlay */}
-        {(needsWalletConnect || (!identity && metamask.isConnected)) && (
+        {needsWalletConnect && (
           <WalletConnect onIdentityReady={handleIdentityReady} />
         )}
       </div>

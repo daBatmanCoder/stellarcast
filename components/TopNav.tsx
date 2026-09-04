@@ -8,6 +8,7 @@ interface TopNavProps {
   verifiedEnsName?: string;
   onConnect: () => void;
   onMenuToggle?: () => void;
+  onGoLive?: () => void;
 }
 
 function MenuIcon() {
@@ -18,7 +19,7 @@ function MenuIcon() {
   );
 }
 
-export function TopNav({ isConnected, address, verifiedEnsName, onConnect, onMenuToggle }: TopNavProps) {
+export function TopNav({ isConnected, address, verifiedEnsName, onConnect, onMenuToggle, onGoLive }: TopNavProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobile, setIsMobile] = useState(() => 
     typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
@@ -118,6 +119,35 @@ export function TopNav({ isConnected, address, verifiedEnsName, onConnect, onMen
 
       {/* Actions right */}
       <div className="flex items-center gap-2">
+        {/* Go Live button - shown when connected */}
+        {isConnected && onGoLive && (
+          <button
+            onClick={onGoLive}
+            className="rounded font-semibold transition-colors"
+            style={{
+              height: '44px',
+              padding: isMobile ? '0 12px' : '0 16px',
+              backgroundColor: 'var(--live)',
+              color: 'white',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: isMobile ? '13px' : '14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = '0.9';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '1';
+            }}
+          >
+            <span style={{ fontSize: '16px' }}>●</span>
+            {!isMobile && 'Go Live'}
+          </button>
+        )}
+
         {isConnected && address ? (
           <div
             className="flex items-center gap-2 rounded"
